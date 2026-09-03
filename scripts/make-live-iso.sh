@@ -68,13 +68,13 @@ TIMEOUT 0
 DISPLAY boot.msg
 LABEL 1
   KERNEL /boot/bzImage
-  APPEND root=/dev/sr0 rootfstype=iso9660 ro console=tty1 acpi=off clocksource=jiffies tsc=unstable
+  APPEND root=LABEL=THINKPAD600X_LIV rootfstype=iso9660 ro rootwait console=tty1 acpi=off clocksource=jiffies tsc=unstable
 LABEL 2
   KERNEL /boot/bzImage
-  APPEND root=/dev/sr0 rootfstype=iso9660 ro console=tty1 acpi=off noapic nolapic nomodeset clocksource=jiffies tsc=unstable
+  APPEND root=LABEL=THINKPAD600X_LIV rootfstype=iso9660 ro rootwait console=tty1 acpi=off noapic nolapic nomodeset clocksource=jiffies tsc=unstable
 LABEL 3
   KERNEL /boot/bzImage
-  APPEND root=/dev/sr0 rootfstype=iso9660 ro console=tty1 acpi=off noapic nolapic nomodeset clocksource=jiffies tsc=unstable init=/sbin/install-live.sh
+  APPEND root=LABEL=THINKPAD600X_LIV rootfstype=iso9660 ro rootwait console=tty1 acpi=off noapic nolapic nomodeset clocksource=jiffies tsc=unstable init=/sbin/install-live.sh
 EOF
 cat > "$STAGING/boot/isolinux/boot.msg" <<'EOF'
 ThinkPad 600X Live CD (6.12.104, 4x)
