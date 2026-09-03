@@ -64,7 +64,7 @@ TIMEOUT 0
 DISPLAY boot.msg
 LABEL 1
   KERNEL /boot/bzImage
-  APPEND root=/dev/sr0 rootfstype=iso9660 ro console=tty1
+  APPEND root=/dev/sr0 rootfstype=iso9660 ro console=tty1 acpi=off clocksource=jiffies tsc=unstable
 LABEL 2
   KERNEL /boot/bzImage
   APPEND root=/dev/sr0 rootfstype=iso9660 ro console=tty1 acpi=off noapic nolapic nomodeset clocksource=jiffies tsc=unstable
