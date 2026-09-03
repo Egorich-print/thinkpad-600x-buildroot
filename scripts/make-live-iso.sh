@@ -56,23 +56,29 @@ if [[ -f "$LIBUTIL" ]]; then cp "$LIBUTIL" "$STAGING/boot/isolinux/"; fi
 # isohdpfx для isohybrid — НЕ используем для CD-RW на старом BIOS 600X (ломает El Torito)
 ISOHDPFX=""
 
-# 4. Конфиг isolinux — максимально простой, без menu.c32 (старый BIOS 600X виснет на UI)
+# 4. Конфиг isolinux — цифры 1/2/3, без menu.c32 (старый BIOS виснет на UI)
 cat > "$STAGING/boot/isolinux/isolinux.cfg" <<'EOF'
-DEFAULT live
+DEFAULT 1
 PROMPT 1
-TIMEOUT 50
+TIMEOUT 0
 DISPLAY boot.msg
-LABEL live
+LABEL 1
   KERNEL /boot/bzImage
   APPEND root=/dev/sr0 rootfstype=iso9660 ro console=tty1
-LABEL install
+LABEL 2
   KERNEL /boot/bzImage
-  APPEND root=/dev/sr0 rootfstype=iso9660 ro console=tty1 init=/sbin/install-live.sh
+  APPEND root=/dev/sr0 rootfstype=iso9660 ro console=tty1 acpi=off noapic nolapic nomodeset clocksource=jiffies tsc=unstable
+LABEL 3
+  KERNEL /boot/bzImage
+  APPEND root=/dev/sr0 rootfstype=iso9660 ro console=tty1 acpi=off noapic nolapic nomodeset clocksource=jiffies tsc=unstable init=/sbin/install-live.sh
 EOF
 cat > "$STAGING/boot/isolinux/boot.msg" <<'EOF'
-ThinkPad 600X Live CD
-- live    : Live CDE (нажми Enter)
-- install : Установить на /dev/sda
+ThinkPad 600X Live CD (4x, 205M)
+1 - Live CDE
+2 - Live Safe (acpi=off noapic)
+3 - Install to HDD (40GB, sda1)
+
+Нажми 1, 2 или 3 и Enter
 EOF
 
 # 5. Скрипт установки (попадёт в live-систему как /sbin/install-live.sh)
