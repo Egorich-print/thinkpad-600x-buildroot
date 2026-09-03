@@ -1,0 +1,23 @@
+# /etc/inittab — BusyBox init
+# Startup the system
+null::sysinit:/bin/mount -t proc proc /proc
+null::sysinit:/bin/mount -o remount,rw /
+null::sysinit:/bin/mkdir -p /dev/pts /dev/shm
+null::sysinit:/bin/mount -a
+null::sysinit:/bin/hostname -F /etc/hostname
+# now run any rc scripts
+::sysinit:/etc/init.d/rcS
+
+# Physical VGA console
+tty1::respawn:/sbin/getty 38400 tty1
+
+# Serial console (dock / QEMU)
+ttyS0::respawn:/sbin/getty -L 115200 ttyS0 vt100
+
+# Ctrl-Alt-Del -> reboot
+::ctrlaltdel:/sbin/reboot
+
+# Shutdown scripts
+::shutdown:/bin/umount -a -r
+::shutdown:/sbin/swapoff -a
+::restart:/sbin/init

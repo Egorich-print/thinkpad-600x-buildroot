@@ -1,0 +1,4 @@
+config BR2_PACKAGE_ANTIWORD
+	bool "antiword"
+	help
+	  antiword — MS Word .doc to text/PostScript/PDF converter.

@@ -1,0 +1,1 @@
+include $(sort $(wildcard $(BR2_EXTERNAL_THINKPAD600X_PATH)/package/*/*.mk))

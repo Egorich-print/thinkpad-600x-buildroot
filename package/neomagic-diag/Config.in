@@ -1,0 +1,8 @@
+config BR2_PACKAGE_NEOMAGIC_DIAG
+	bool "neomagic-diag"
+	help
+	  Standalone diagnostic for the NeoMagic MagicGraph 256ZX (NM2360)
+	  BitBLT engine. Maps PCI BAR0 (framebuffer) + BAR1 (MMIO) from
+	  userspace and tests solid fill, screen-to-screen blit and ROP,
+	  verifying results and timing. Safe: time-bounded wait, no writes
+	  outside the documented register block.

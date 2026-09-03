@@ -1,0 +1,5 @@
+config BR2_PACKAGE_FASTFETCH
+	bool "fastfetch"
+	depends on BR2_TOOLCHAIN_GCC_AT_LEAST_13
+	help
+	  fastfetch — system information display (C).

@@ -1,0 +1,4 @@
+# Modules auto-loaded at boot. bochs-drm provides the QEMU framebuffer for
+# modesetting Xorg; on the real 600X the NeoMagic framebuffer (neofb) is built-in.
+bochs-drm
+drm

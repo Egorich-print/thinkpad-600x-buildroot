@@ -1,0 +1,16 @@
+# Build output / release binaries (reproducible from source; tracked checksums in release/SHA256SUMS.txt)
+/release/*.ext2
+/release/*.ext4
+/release/*.tar
+/release/bzImage
+/release/*.log
+
+# Stale QEMU workspace dumps
+/images/
+
+# Compiled tool binaries
+/tools/neomagic_diag/neomagic_diag
+
+# Editor/OS cruft
+.DS_Store
+*.swp
