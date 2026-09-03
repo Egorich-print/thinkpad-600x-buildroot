@@ -53,8 +53,12 @@ if [[ -f "$LDLINUX" ]]; then cp "$LDLINUX" "$STAGING/boot/isolinux/"; fi
 if [[ -f "$LIBCOM32" ]]; then cp "$LIBCOM32" "$STAGING/boot/isolinux/"; fi
 if [[ -f "$LIBUTIL" ]]; then cp "$LIBUTIL" "$STAGING/boot/isolinux/"; fi
 
-# isohdpfx для isohybrid — НЕ используем для CD-RW на старом BIOS 600X (ломает El Torito)
-ISOHDPFX=""
+# isohdpfx for isohybrid (needed for USB, harmless for CD)
+if [[ -f /tmp/isohdpfx.bin ]]; then
+  ISOHDPFX="/tmp/isohdpfx.bin"
+elif [[ -f /usr/lib/ISOLINUX/isohdpfx.bin ]]; then
+  ISOHDPFX="/usr/lib/ISOLINUX/isohdpfx.bin"
+fi
 
 # 4. Конфиг isolinux — цифры 1/2/3, без menu.c32 (старый BIOS виснет на UI)
 cat > "$STAGING/boot/isolinux/isolinux.cfg" <<'EOF'
@@ -73,37 +77,44 @@ LABEL 3
   APPEND root=/dev/sr0 rootfstype=iso9660 ro console=tty1 acpi=off noapic nolapic nomodeset clocksource=jiffies tsc=unstable init=/sbin/install-live.sh
 EOF
 cat > "$STAGING/boot/isolinux/boot.msg" <<'EOF'
-ThinkPad 600X Live CD (4x, 205M)
+ThinkPad 600X Live CD (6.12.104, 4x)
 1 - Live CDE
 2 - Live Safe (acpi=off noapic)
-3 - Install to HDD (40GB, sda1)
+3 - Install to HDD (40GB sda1)
 
-Нажми 1, 2 или 3 и Enter
+Press 1, 2 or 3 then Enter
 EOF
 
 # 5. Скрипт установки (попадёт в live-систему как /sbin/install-live.sh)
 mkdir -p "$STAGING/sbin"
 cat > "$STAGING/sbin/install-live.sh" <<'EOS'
 #!/bin/sh
-# Live-установщик: копирует live-систему с CD на /dev/sda (PATA HDD)
+# Live installer: copy live system from CD/USB to /dev/sda (PATA HDD)
 set -e
 echo "=== ThinkPad 600X Live Installer ==="
-echo "Цель: /dev/sda (весь диск будет перезаписан!)"
-echo "Нажми Enter для продолжения, Ctrl-C для отмены"
+echo "Target: /dev/sda (whole disk will be erased!)"
+echo "Press Enter to continue, Ctrl-C to abort"
 read dummy
 
-# Найти CD
-if [ -b /dev/sr0 ]; then CD=/dev/sr0; else CD=/dev/cdrom; fi
+# Find CD/USB source
+if [ -b /dev/sr0 ]; then CD=/dev/sr0
+elif [ -b /dev/sda ]; then CD=/dev/sr0
+else CD=/dev/cdrom; fi
+# USB hybrid appears as /dev/sdb or /dev/sda, CD as sr0 — try to detect ISO source
+if [ ! -b "$CD" ]; then
+  for dev in /dev/sr0 /dev/cdrom /dev/sdb1 /dev/sda1; do
+    if mount -o ro "$dev" /mnt 2>/dev/null; then
+      if [ -f /mnt/boot/bzImage ]; then CD="$dev"; umount /mnt; break; fi
+      umount /mnt 2>/dev/null || true
+    fi
+  done
+fi
 
-# Размонтировать цель если смонтирована
+# Unmount target if mounted
 umount /dev/sda* 2>/dev/null || true
 
-echo "Копирую rootfs с $CD на /dev/sda (dd, ~500M)..."
-# Мы не можем dd iso9660 напрямую — копируем файлы через tar
-# Проще: пересоздать ext2 на /dev/sda и скопировать файлы
-# Но у нас есть rootfs.ext2 как файл? В live-ISO его нет отдельно.
-# Вместо этого — создаём ext2 и копируем live-файлы
-echo "40 ГБ диск: создаю MBR + один раздел на весь диск (совместимо со старым BIOS)..."
+echo "Copying rootfs from $CD to /dev/sda..."
+echo "40GB disk: creating MBR + single partition (compatible with old BIOS)..."
 if command -v sfdisk >/dev/null 2>&1; then
   printf "label: dos\nstart=2048, type=83, bootable\n" | sfdisk /dev/sda 2>&1 | tail -10
 elif command -v fdisk >/dev/null 2>&1; then
@@ -113,25 +124,25 @@ partprobe /dev/sda 2>/dev/null || sleep 2
 TARGET_PART="/dev/sda1"
 if [ ! -b "$TARGET_PART" ]; then TARGET_PART="/dev/sda"; echo "Раздел не появился, использую $TARGET_PART напрямую"; fi
 
-echo "Создаю ext4 на $TARGET_PART (40 ГБ)..."
+echo "Creating ext4 on $TARGET_PART (40GB)..."
 mkfs.ext4 -F "$TARGET_PART" 2>&1 | tail -5
 mkdir -p /mnt/target /mnt/cdrom
 mount "$TARGET_PART" /mnt/target
 mount -o ro "$CD" /mnt/cdrom 2>&1 | head -5 || mount -o ro /dev/sr0 /mnt/cdrom
 
-echo "Копирую файлы (из ISO в ext4, ~200M)..."
+echo "Copying files (ISO -> ext4, ~200M)..."
 cp -a /mnt/cdrom/* /mnt/target/ 2>&1 | tail -20
-# Убедиться что ядро на месте
+# Ensure kernel is present
 cp /mnt/cdrom/boot/bzImage /mnt/target/boot/bzImage 2>/dev/null || true
 
-# Ставим syslinux/extlinux
+# Install extlinux/syslinux
 if command -v extlinux >/dev/null 2>&1; then
-  echo "Ставлю extlinux на $TARGET_PART..."
+  echo "Installing extlinux on $TARGET_PART..."
   extlinux --install /mnt/target/boot 2>&1 | tail -5 || true
 elif command -v syslinux >/dev/null 2>&1; then
   syslinux --install "$TARGET_PART" 2>&1 | tail -5 || syslinux -i "$TARGET_PART" 2>&1 | tail -5
 fi
-# MBR (первые 440 байт, не трогая таблицу разделов)
+# MBR (first 440 bytes, keep partition table)
 if [ -f /usr/lib/syslinux/mbr/mbr.bin ]; then
   dd if=/usr/lib/syslinux/mbr/mbr.bin of=/dev/sda bs=440 count=1 conv=notrunc 2>&1 | tail -3
 elif [ -f /usr/lib/EXTLINUX/mbr.bin ]; then
@@ -142,14 +153,18 @@ fi
 
 umount /mnt/target
 umount /mnt/cdrom
-echo "Готово. Извлеки CD и перезагрузись с HDD."
-echo "Логин: root / thinkpad600x"
+echo "Done. Remove CD/USB and reboot from HDD."
+echo "Login: root / thinkpad600x"
 EOS
 chmod +x "$STAGING/sbin/install-live.sh"
 
-# 6. Собрать ISO
-echo "Собираю ISO..."
-ISOHDPFX_OPT=""
+# 6. Build hybrid ISO (CD + USB via Plop)
+echo "Building hybrid ISO (CD+USB)..."
+if [[ -f "$ISOHDPFX" ]]; then
+  ISOHDPFX_OPT="-isohybrid-mbr $ISOHDPFX"
+else
+  ISOHDPFX_OPT=""
+fi
 
 # На macOS xorriso есть, на VM тоже
 if command -v xorrisofs >/dev/null 2>&1; then
