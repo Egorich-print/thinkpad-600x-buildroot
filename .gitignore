@@ -3,7 +3,9 @@
 /release/*.ext4
 /release/*.tar
 /release/bzImage
+/release/*.iso
 /release/*.log
+/tmp/*.iso
 
 # Stale QEMU workspace dumps
 /images/
