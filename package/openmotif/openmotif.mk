@@ -46,7 +46,7 @@ endef
 OPENMOTIF_PRE_BUILD_HOOKS += OPENMOTIF_BUILD_HOST_TOOLS
 
 define OPENMOTIF_POST_INSTALL_TARGET_RM
-	rm -rf $(TARGET_DIR)/usr/share?dir 2>/dev/null || true
+	rm -rf $(TARGET_DIR)/usr/share/doc 2>/dev/null || true
 endef
 
 # Drop the Motif demo programs to keep rootfs small; keep libXm/libMrm/libUil.

@@ -11,7 +11,7 @@
 
 CDE_VERSION = 2.5.3
 CDE_SOURCE = cde-$(CDE_VERSION).tar.gz
-CDE_SITE = https://downloads.sourceforge.net/project/cdesktopenv/$(CDE_VERSION)
+CDE_SITE = https://downloads.sourceforge.net/project/cdesktopenv/src
 CDE_LICENSE = LGPL-2.0 (with GPL/MIT parts)
 CDE_LICENSE_FILES = COPYING
 

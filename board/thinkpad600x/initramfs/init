@@ -1,0 +1,81 @@
+#!/bin/sh
+#
+# ThinkPad 600X live-boot initramfs.
+#
+# Why this exists: the kernel's root= parser (block/early-lookup.c) understands
+# only PARTUUID=, PARTLABEL=, /dev/<name> and MAJOR:MINOR -- it does NOT
+# understand LABEL= or filesystem UUIDs.  A single hybrid CD/USB image can
+# therefore not name its own root device ahead of time: the ISO is /dev/sr0 on
+# a CD but /dev/sdX (after the internal PATA disk) on a USB stick.
+#
+# So instead we boot a tiny initramfs, scan the block devices for the live
+# media by its contents, mount it with a RAM-backed overlayfs (writable live
+# root) and switch_root into the real system.
+#
+/bin/busybox --install -s /bin 2>/dev/null
+/bin/busybox --install -s /sbin 2>/dev/null
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+
+echo "=== ThinkPad 600X live boot ==="
+
+mount -t proc    proc    /proc 2>/dev/null
+mount -t sysfs   sysfs   /sys  2>/dev/null
+mount -t devtmpfs devtmpfs /dev 2>/dev/null || mount -t tmpfs tmpfs /dev 2>/dev/null
+
+MEDIA=""
+find_media() {
+  i=0
+  while [ "$i" -lt 15 ]; do
+    for dev in /dev/sr0 /dev/sr1 /dev/sr2 \
+               /dev/sda /dev/sdb /dev/sdc /dev/sdd /dev/sde /dev/sdf \
+               /dev/sda1 /dev/sdb1 /dev/sdc1 /dev/sdd1 /dev/sde1 /dev/sdf1; do
+      [ -b "$dev" ] || continue
+      mkdir -p /media
+      if mount -t iso9660 -o ro "$dev" /media 2>/dev/null; then
+        if [ -e /media/sbin/install-live.sh ] && [ -e /media/boot/bzImage ]; then
+          MEDIA="$dev"
+          echo "LIVE: media found on $dev"
+          return 0
+        fi
+        umount /media 2>/dev/null
+      fi
+    done
+    sleep 1
+    i=$((i + 1))
+  done
+  return 1
+}
+
+if ! find_media; then
+  echo "LIVE: media not found -- dropping to shell"
+  exec sh
+fi
+
+# Read the install flag now: /proc is moved into the new root further down.
+INSTALL=0
+grep -q 'live.install=1' /proc/cmdline && INSTALL=1
+
+# Writable, RAM-backed overlay on top of the read-only iso9660 media.
+mkdir -p /overlay /newroot
+mount -t tmpfs -o mode=0755 tmpfs /overlay
+mkdir -p /overlay/upper /overlay/work
+if mount -t overlay overlay \
+     -o lowerdir=/media,upperdir=/overlay/upper,workdir=/overlay/work \
+     /newroot 2>/dev/null; then
+  echo "LIVE: overlayfs ready (writable root)"
+else
+  echo "LIVE: overlayfs unavailable, read-only root"
+  mount --bind /media /newroot 2>/dev/null || { ln -s /media /newroot; }
+fi
+
+mount -o move /proc /newroot/proc 2>/dev/null
+mount -o move /sys  /newroot/sys  2>/dev/null
+mount -o move /dev  /newroot/dev  2>/dev/null
+
+if [ "$INSTALL" = "1" ]; then
+  echo "LIVE: installer mode"
+  exec switch_root /newroot /sbin/install-live.sh
+fi
+
+echo "LIVE: switch_root -> /sbin/init"
+exec switch_root /newroot /sbin/init

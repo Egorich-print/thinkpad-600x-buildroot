@@ -148,3 +148,37 @@ Every major architectural decision for the ThinkPad 600X Buildroot image, with r
   `nano` cover editing) and its `Config.in` source line.
 - Removed empty `patches/` (all cross-compile fixes live as `sed`/hooks in the
   package `.mk`), and empty `benchmarks/`, `output/`, `research/`.
+
+## Live media + installer (validated)
+
+- **Kernel `root=` cannot use `LABEL=`.** The 6.12 parser (`block/early-lookup.c`,
+  `early_lookup_bdev()`) accepts only `PARTUUID=`, `PARTLABEL=`, `/dev/<name>` and
+  `MAJOR:MINOR`; the source explicitly notes it does *not* search filesystem
+  UUIDs/labels. `root=LABEL=THINKPAD600X_LIV` therefore panics
+  ("Disabling rootwait; root= is invalid"). A hybrid CD/USB image cannot name its
+  own root device, so **a small initramfs locates the live media by contents**
+  (marker files), mounts a RAM-backed **overlayfs** for a writable root and
+  `switch_root`s. This works identically for `/dev/sr0` (CD) and `/dev/sdX` (USB).
+- **USB storage is built into the kernel** (`USB`, `USB_UHCI_HCD`, `USB_EHCI_HCD`,
+  `USB_STORAGE`, `BLK_DEV_SD`, `BLK_DEV_SR`, `ATA_PIIX` = `y`): the initramfs must
+  find the root device before any module can be loaded.
+- **440BX stability:** `CONFIG_NO_HZ_IDLE` off and `CONFIG_CPU_FREQ` off — tickless
+  idle and SpeedStep are unreliable/absent on the 440BX + Katmai.
+- **Installed root filesystem:** `mkfs.ext4 -O ^metadata_csum,^orphan_file,^64bit`.
+  syslinux/extlinux **6.03** cannot read directories on a filesystem with
+  `metadata_csum`/`orphan_file` (modern `mke2fs` enables both by default), which
+  presents as "No configuration file found".
+- **On-device bootloader install:** `extlinux` (i686) + `mbr.bin` ship in the rootfs
+  overlay. Buildroot's syslinux package builds its installers for the *host*
+  (aarch64), so the i686 `extlinux` is cross-compiled from the syslinux tree with
+  `CC_FOR_BUILD` pointed at the target toolchain. See `docs/INSTALL.md`.
+- **Partitioning tools:** util-linux "basic set" (`sfdisk`, `blockdev`, `partx`) is
+  included; busybox `fdisk` is not scriptable enough for unattended partitioning.
+- **Console:** the live entries and the installed `extlinux.conf` keep
+  `console=tty0 console=ttyS0,115200` so the dock serial port is usable for
+  debugging.
+- **CDE source URL fixed:** `…/project/cdesktopenv/src` (the version-less path
+  returned HTTP 404).
+- **Xorg auto-detects the GPU:** `xorg.conf` only pre-loads the legacy helper
+  modules; forcing `Driver "modesetting"` would fail on the real 600X (neofb is not
+  KMS).

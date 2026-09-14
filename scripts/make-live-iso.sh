@@ -1,66 +1,71 @@
 #!/bin/bash
-# make-live-iso.sh — собрать загрузочный live-CD ISO для ThinkPad 600X
-# Требует: xorriso, isolinux, собранный release/rootfs.tar + bzImage
+# make-live-iso.sh — build a bootable hybrid live CD/USB ISO for the ThinkPad 600X
+#
+# Requires: xorriso, cpio, gzip, and release/{rootfs.tar,bzImage}.
+# isolinux.bin/isohdpfx.bin are taken from the host or, on macOS, from the
+# lima build VM (limactl shell br2).
+#
+# The image boots a tiny initramfs (see board/thinkpad600x/initramfs/init)
+# which locates the live media by contents and mounts a writable overlayfs,
+# so the *same* ISO boots from a CD (/dev/sr0) and from a USB stick (/dev/sdX).
 set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 RELEASE_DIR="$PROJECT_DIR/release"
+INITRAMFS_SRC="$PROJECT_DIR/board/thinkpad600x/initramfs"
 STAGING="/tmp/thinkpad-live-staging"
+INITRD_STAGE="/tmp/thinkpad-initrd"
 ISO_OUT="/tmp/thinkpad600x-live.iso"
 
-echo "=== Подготовка live-ISO (ISO9660, El Torito, 4x-friendly) ==="
-rm -rf "$STAGING" "$ISO_OUT"
+echo "=== Building ThinkPad 600X live ISO (hybrid CD/USB) ==="
+rm -rf "$STAGING" "$INITRD_STAGE" "$ISO_OUT"
 mkdir -p "$STAGING/boot/isolinux"
 
-# 1. Распаковать rootfs.tar в корень ISO (это и будет live-система, ro)
-echo "Распакую rootfs.tar → $STAGING ..."
+# 1. Unpack the target rootfs — this becomes the read-only live root.
+echo "Unpacking rootfs.tar -> $STAGING ..."
 tar -xf "$RELEASE_DIR/rootfs.tar" -C "$STAGING"
 
-# 2. Ядро
+# 2. Kernel
 cp "$RELEASE_DIR/bzImage" "$STAGING/boot/bzImage"
-echo "bzImage скопирован"
+echo "bzImage copied"
 
-# 3. Isolinux (из линуксового окружения — передай пути, или скачаю)
+# 3. Build the live-boot initramfs (busybox + shared libs + /init).
+echo "Building initramfs -> /boot/initrd.img ..."
+mkdir -p "$INITRD_STAGE"/{bin,lib,mnt,proc,sys,dev}
+tar -xf "$RELEASE_DIR/rootfs.tar" -C "$INITRD_STAGE" \
+    ./bin/busybox ./lib/ld-linux.so.2 ./lib/libc.so.6 ./lib/libresolv.so.2
+ln -sf busybox "$INITRD_STAGE/bin/sh"
+cp "$INITRAMFS_SRC/init" "$INITRD_STAGE/init"
+chmod +x "$INITRD_STAGE/init"
+( cd "$INITRD_STAGE" && find . -print0 | cpio --null -o -H newc 2>/dev/null | gzip -9 ) \
+    > "$STAGING/boot/initrd.img"
+ls -lh "$STAGING/boot/initrd.img"
+
+# 4. isolinux bootloader (host, or from the lima VM on macOS).
 ISOLINUX_BIN="/usr/lib/ISOLINUX/isolinux.bin"
 ISOHDPFX="/usr/lib/ISOLINUX/isohdpfx.bin"
 LDLINUX="/usr/lib/syslinux/modules/bios/ldlinux.c32"
-LIBCOM32="/usr/lib/syslinux/modules/bios/libcom32.c32"
-LIBUTIL="/usr/lib/syslinux/modules/bios/libutil.c32"
 
-# Если на macOS — файлы в VM
 if [[ ! -f "$ISOLINUX_BIN" ]]; then
-  # Попробуй взять из VM через limactl
   if limactl shell br2 -- test -f /usr/lib/ISOLINUX/isolinux.bin 2>/dev/null; then
-    echo "Копирую isolinux из VM..."
-    limactl shell br2 -- cat /usr/lib/ISOLINUX/isolinux.bin > /tmp/isolinux.bin
-    limactl shell br2 -- cat /usr/lib/ISOLINUX/isohdpfx.bin > /tmp/isohdpfx.bin
+    echo "Copying isolinux from the br2 VM..."
+    limactl shell br2 -- cat /usr/lib/ISOLINUX/isolinux.bin    > /tmp/isolinux.bin
+    limactl shell br2 -- cat /usr/lib/ISOLINUX/isohdpfx.bin    > /tmp/isohdpfx.bin
     limactl shell br2 -- cat /usr/lib/syslinux/modules/bios/ldlinux.c32 > /tmp/ldlinux.c32
-    limactl shell br2 -- cat /usr/lib/syslinux/modules/bios/libcom32.c32 > /tmp/libcom32.c32
-    limactl shell br2 -- cat /usr/lib/syslinux/modules/bios/libutil.c32 > /tmp/libutil.c32
     ISOLINUX_BIN="/tmp/isolinux.bin"
     ISOHDPFX="/tmp/isohdpfx.bin"
     LDLINUX="/tmp/ldlinux.c32"
-    LIBCOM32="/tmp/libcom32.c32"
-    LIBUTIL="/tmp/libutil.c32"
   elif [[ -f "/Applications/VMware Fusion.app/Contents/Resources/isolinux.bin" ]]; then
     ISOLINUX_BIN="/Applications/VMware Fusion.app/Contents/Resources/isolinux.bin"
-    echo "Использую isolinux из VMware Fusion (без ldlinux — нужен полный syslinux)"
+    echo "Using isolinux from VMware Fusion"
   fi
 fi
 
-# Копируем загрузчик
-if [[ -f "$ISOLINUX_BIN" ]]; then cp "$ISOLINUX_BIN" "$STAGING/boot/isolinux/"; fi
-if [[ -f "$LDLINUX" ]]; then cp "$LDLINUX" "$STAGING/boot/isolinux/"; fi
-if [[ -f "$LIBCOM32" ]]; then cp "$LIBCOM32" "$STAGING/boot/isolinux/"; fi
-if [[ -f "$LIBUTIL" ]]; then cp "$LIBUTIL" "$STAGING/boot/isolinux/"; fi
+[[ -f "$ISOLINUX_BIN" ]] && cp "$ISOLINUX_BIN" "$STAGING/boot/isolinux/"
+[[ -f "$LDLINUX" ]]      && cp "$LDLINUX"      "$STAGING/boot/isolinux/"
+[[ -f "$ISOHDPFX" ]]     || ISOHDPFX=""
 
-# isohdpfx for isohybrid (needed for USB, harmless for CD)
-if [[ -f /tmp/isohdpfx.bin ]]; then
-  ISOHDPFX="/tmp/isohdpfx.bin"
-elif [[ -f /usr/lib/ISOLINUX/isohdpfx.bin ]]; then
-  ISOHDPFX="/usr/lib/ISOLINUX/isohdpfx.bin"
-fi
-
-# 4. Конфиг isolinux — цифры 1/2/3, без menu.c32 (старый BIOS виснет на UI)
+# 5. isolinux config. No root= is needed: the initramfs finds the media.
+#    Plain digit menu (no menu.c32 — the 1999 BIOS hangs on the UI module).
 cat > "$STAGING/boot/isolinux/isolinux.cfg" <<'EOF'
 DEFAULT 1
 PROMPT 1
@@ -68,105 +73,151 @@ TIMEOUT 0
 DISPLAY boot.msg
 LABEL 1
   KERNEL /boot/bzImage
-  APPEND root=LABEL=THINKPAD600X_LIV rootfstype=iso9660 ro rootwait console=tty1 acpi=off clocksource=jiffies tsc=unstable
+  INITRD /boot/initrd.img
+  APPEND console=tty0 console=ttyS0,115200 acpi=off clocksource=jiffies tsc=unstable
 LABEL 2
   KERNEL /boot/bzImage
-  APPEND root=LABEL=THINKPAD600X_LIV rootfstype=iso9660 ro rootwait console=tty1 acpi=off noapic nolapic nomodeset clocksource=jiffies tsc=unstable
+  INITRD /boot/initrd.img
+  APPEND console=tty0 console=ttyS0,115200 acpi=off noapic nolapic nomodeset clocksource=jiffies tsc=unstable
 LABEL 3
   KERNEL /boot/bzImage
-  APPEND root=LABEL=THINKPAD600X_LIV rootfstype=iso9660 ro rootwait console=tty1 acpi=off noapic nolapic nomodeset clocksource=jiffies tsc=unstable init=/sbin/install-live.sh
+  INITRD /boot/initrd.img
+  APPEND console=tty0 console=ttyS0,115200 acpi=off noapic nolapic nomodeset clocksource=jiffies tsc=unstable live.install=1
 EOF
 cat > "$STAGING/boot/isolinux/boot.msg" <<'EOF'
-ThinkPad 600X Live CD (6.12.104, 4x)
+ThinkPad 600X Live (6.12.104)
 1 - Live CDE
-2 - Live Safe (acpi=off noapic)
-3 - Install to HDD (40GB sda1)
+2 - Live Safe (noapic/nolapic)
+3 - Install to internal HDD (/dev/sda)
 
 Press 1, 2 or 3 then Enter
 EOF
 
-# 5. Скрипт установки (попадёт в live-систему как /sbin/install-live.sh)
+# 6. The HDD installer ships inside the live root as /sbin/install-live.sh.
 mkdir -p "$STAGING/sbin"
 cat > "$STAGING/sbin/install-live.sh" <<'EOS'
 #!/bin/sh
-# Live installer: copy live system from CD/USB to /dev/sda (PATA HDD)
+# ThinkPad 600X live installer: copy the live system onto the internal PATA disk.
 set -e
 echo "=== ThinkPad 600X Live Installer ==="
-echo "Target: /dev/sda (whole disk will be erased!)"
-echo "Press Enter to continue, Ctrl-C to abort"
-read dummy
-
-# Find CD/USB source
-if [ -b /dev/sr0 ]; then CD=/dev/sr0
-elif [ -b /dev/sda ]; then CD=/dev/sr0
-else CD=/dev/cdrom; fi
-# USB hybrid appears as /dev/sdb or /dev/sda, CD as sr0 — try to detect ISO source
-if [ ! -b "$CD" ]; then
-  for dev in /dev/sr0 /dev/cdrom /dev/sdb1 /dev/sda1; do
-    if mount -o ro "$dev" /mnt 2>/dev/null; then
-      if [ -f /mnt/boot/bzImage ]; then CD="$dev"; umount /mnt; break; fi
-      umount /mnt 2>/dev/null || true
-    fi
-  done
+echo
+echo "Available disks:"
+cat /proc/partitions
+echo
+echo "Target: /dev/sda (the internal PATA disk). ALL DATA ON IT WILL BE ERASED."
+if grep -q 'live.install.auto=1' /proc/cmdline; then
+  echo "Unattended mode (live.install.auto=1): proceeding."
+else
+  printf "Type YES to continue: "
+  read confirm
+  [ "$confirm" = "YES" ] || { echo "Aborted."; exit 1; }
 fi
 
-# Unmount target if mounted
-umount /dev/sda* 2>/dev/null || true
+# Locate the live media (same scan the initramfs uses).
+CD=""
+for dev in /dev/sr0 /dev/sr1 /dev/sda /dev/sdb /dev/sdc /dev/sdd \
+           /dev/sda1 /dev/sdb1 /dev/sdc1 /dev/sdd1; do
+  [ -b "$dev" ] || continue
+  mkdir -p /mnt/src
+  if mount -t iso9660 -o ro "$dev" /mnt/src 2>/dev/null; then
+    [ -e /mnt/src/boot/bzImage ] && { CD="$dev"; break; }
+    umount /mnt/src 2>/dev/null || true
+  fi
+done
+[ -n "$CD" ] || { echo "ERROR: live media not found"; exit 1; }
+echo "Live media: $CD"
 
-echo "Copying rootfs from $CD to /dev/sda..."
-echo "40GB disk: creating MBR + single partition (compatible with old BIOS)..."
+umount /dev/sda[0-9]* 2>/dev/null || true
+
+echo "Partitioning /dev/sda (MBR + one bootable partition)..."
 if command -v sfdisk >/dev/null 2>&1; then
-  printf "label: dos\nstart=2048, type=83, bootable\n" | sfdisk /dev/sda 2>&1 | tail -10
-elif command -v fdisk >/dev/null 2>&1; then
-  printf "o\nn\np\n1\n2048\n\nw\n" | fdisk /dev/sda 2>&1 | tail -10
+  printf 'label: dos\nstart=2048, type=83, bootable\n' | sfdisk /dev/sda
+else
+  # busybox fdisk fallback (less reliable; prefer util-linux sfdisk)
+  printf 'o\nn\np\n1\n\n\nw\n' | fdisk /dev/sda
 fi
-partprobe /dev/sda 2>/dev/null || sleep 2
-TARGET_PART="/dev/sda1"
-if [ ! -b "$TARGET_PART" ]; then TARGET_PART="/dev/sda"; echo "Раздел не появился, использую $TARGET_PART напрямую"; fi
+# Make the kernel re-read the partition table.
+blockdev --rereadpt /dev/sda 2>/dev/null || partx -a /dev/sda 2>/dev/null || true
+i=0
+while [ ! -b /dev/sda1 ] && [ "$i" -lt 15 ]; do sleep 1; i=$((i+1)); done
+TARGET_PART=/dev/sda1
+[ -b "$TARGET_PART" ] || { echo "ERROR: /dev/sda1 did not appear"; exit 1; }
 
-echo "Creating ext4 on $TARGET_PART (40GB)..."
-mkfs.ext4 -F "$TARGET_PART" 2>&1 | tail -5
-mkdir -p /mnt/target /mnt/cdrom
+echo "Creating ext4 on $TARGET_PART ..."
+# syslinux/extlinux 6.03 cannot read directories on a filesystem with
+# metadata_csum/orphan_file (and 64bit is pointless on a 40 GB disk), so create
+# the root filesystem without those features.
+mkfs.ext4 -F -O ^metadata_csum,^orphan_file,^64bit "$TARGET_PART"
+
+mkdir -p /mnt/target
 mount "$TARGET_PART" /mnt/target
-mount -o ro "$CD" /mnt/cdrom 2>&1 | head -5 || mount -o ro /dev/sr0 /mnt/cdrom
 
-echo "Copying files (ISO -> ext4, ~200M)..."
-cp -a /mnt/cdrom/* /mnt/target/ 2>&1 | tail -20
-# Ensure kernel is present
-cp /mnt/cdrom/boot/bzImage /mnt/target/boot/bzImage 2>/dev/null || true
+echo "Copying live files onto $TARGET_PART (~200 MB)..."
+cp -a /mnt/src/. /mnt/target/
 
-# Install extlinux/syslinux
+# Bootloader config for the installed system: boot from the ext4 root.
+cat > /mnt/target/boot/extlinux.conf <<'CFG'
+DEFAULT linux
+PROMPT 0
+TIMEOUT 30
+LABEL linux
+  KERNEL /boot/bzImage
+  APPEND root=/dev/sda1 rootfstype=ext4 rw rootwait console=tty0 console=ttyS0,115200 acpi=off clocksource=jiffies tsc=unstable
+CFG
+cp /mnt/target/boot/extlinux.conf /mnt/target/boot/syslinux.cfg
+
+# Point the installed system's fstab at the real root device.
+cat > /mnt/target/etc/fstab <<'CFG'
+/dev/sda1       /         ext4    rw,noatime              0 1
+proc            /proc     proc    defaults                0 0
+sysfs           /sys      sysfs   defaults                0 0
+devpts          /dev/pts  devpts  defaults,gid=5,mode=620 0 0
+tmpfs           /dev/shm  tmpfs   mode=1777,nosuid,nodev  0 0
+tmpfs           /tmp      tmpfs   defaults,size=32M       0 0
+tmpfs           /run      tmpfs   defaults,size=8M,mode=0755 0 0
+CFG
+
+# Copy the syslinux COM32 modules next to the kernel: extlinux needs ldlinux.c32
+# to interpret extlinux.conf, and the live ISO already carries them.
+for c32 in /mnt/src/boot/isolinux/*.c32; do
+  [ -f "$c32" ] && cp "$c32" /mnt/target/boot/
+done
+
+# Install the extlinux bootloader into the partition's VBR (creates ldlinux.sys).
 if command -v extlinux >/dev/null 2>&1; then
-  echo "Installing extlinux on $TARGET_PART..."
-  extlinux --install /mnt/target/boot 2>&1 | tail -5 || true
-elif command -v syslinux >/dev/null 2>&1; then
-  syslinux --install "$TARGET_PART" 2>&1 | tail -5 || syslinux -i "$TARGET_PART" 2>&1 | tail -5
-fi
-# MBR (first 440 bytes, keep partition table)
-if [ -f /usr/lib/syslinux/mbr/mbr.bin ]; then
-  dd if=/usr/lib/syslinux/mbr/mbr.bin of=/dev/sda bs=440 count=1 conv=notrunc 2>&1 | tail -3
-elif [ -f /usr/lib/EXTLINUX/mbr.bin ]; then
-  dd if=/usr/lib/EXTLINUX/mbr.bin of=/dev/sda bs=440 count=1 conv=notrunc 2>&1 | tail -3
-elif [ -f /usr/lib/syslinux/mbr/gptmbr.bin ]; then
-  dd if=/usr/lib/syslinux/mbr/gptmbr.bin of=/dev/sda bs=440 count=1 conv=notrunc 2>&1 | tail -3
+  echo "Installing extlinux..."
+  extlinux --install /mnt/target/boot
+else
+  echo "WARNING: extlinux not found; HDD may not be bootable"
 fi
 
+# Write the syslinux MBR code to sector 0 (first 440 bytes only, so the
+# partition table stays intact).
+for mbr in /usr/share/syslinux/mbr.bin /usr/lib/syslinux/mbr/mbr.bin; do
+  if [ -f "$mbr" ]; then
+    dd if="$mbr" of=/dev/sda bs=440 count=1 conv=notrunc 2>/dev/null && break
+  fi
+done
+
+sync
 umount /mnt/target
-umount /mnt/cdrom
-echo "Done. Remove CD/USB and reboot from HDD."
+umount /mnt/src 2>/dev/null || true
+echo
+echo "Installation complete."
+echo "Remove the CD/USB and the system will reboot into the installed HDD."
 echo "Login: root / thinkpad600x"
+echo
+sync
+# This script runs as PID 1; exiting would panic. Reboot instead.
+reboot -f 2>/dev/null || exec sh
 EOS
 chmod +x "$STAGING/sbin/install-live.sh"
 
-# 6. Build hybrid ISO (CD + USB via Plop)
-echo "Building hybrid ISO (CD+USB)..."
-if [[ -f "$ISOHDPFX" ]]; then
-  ISOHDPFX_OPT="-isohybrid-mbr $ISOHDPFX"
-else
-  ISOHDPFX_OPT=""
-fi
+# 7. Build the hybrid ISO (El Torito for CD + isohybrid MBR for USB/Plop).
+echo "Building hybrid ISO ..."
+ISOHDPFX_OPT=""
+[ -n "$ISOHDPFX" ] && [ -f "$ISOHDPFX" ] && ISOHDPFX_OPT="-isohybrid-mbr $ISOHDPFX"
 
-# На macOS xorriso есть, на VM тоже
 if command -v xorrisofs >/dev/null 2>&1; then
   XORRISO=xorrisofs
 elif command -v mkisofs >/dev/null 2>&1; then
@@ -176,12 +227,14 @@ else
 fi
 
 $XORRISO -o "$ISO_OUT" \
-  -R -J -V "THINKPAD600X_LIVE" \
+  -R -J -V "THINKPAD600X_LIV" \
   -b boot/isolinux/isolinux.bin -c boot/isolinux/boot.cat \
   -no-emul-boot -boot-load-size 4 -boot-info-table \
   $ISOHDPFX_OPT \
-  "$STAGING" 2>&1 | tail -20
+  "$STAGING" 2>&1 | tail -15
 
+echo
 ls -lh "$ISO_OUT"
-echo "Готово: $ISO_OUT"
-echo "Запись: hdiutil burn \"$ISO_OUT\" -speed 4   или   drutil burn \"$ISO_OUT\""
+echo "Done: $ISO_OUT"
+echo "USB:  diskutil unmountDisk /dev/diskN && sudo dd if=$ISO_OUT of=/dev/rdiskN bs=1m"
+echo "CD:   hdiutil burn \"$ISO_OUT\" -speed 4"

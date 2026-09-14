@@ -1,46 +1,82 @@
-# Work checkpoint / resume state — FINAL
+# Status / resume state
 
-Last updated: build session 2 (complete).
+Last updated: live-media + on-device installer work (validated in QEMU).
 
-## Status: validated build (QEMU 64 MB, `-cpu pentium3`)
+## Status: working — live CD/USB boots, installs to HDD, installed HDD boots
 
-- **Toolchain**: Buildroot 2026.05.2, `glibc`, gcc 14.4.0, `BR2_ARCH=i686`,
-  `-march=pentium3 -mtune=pentium3`, `-O2`. No SSE2 in compiler output.
-- **Kernel 6.18.7**: `MPENTIUMIII`, SMP off, `CC_OPTIMIZE_FOR_SIZE` (`-Os`),
-  `DRM=m` + `DRM_BOCHS` + `DRM_SIMPLEDRM`, `FB_NEOMAGIC`, `FB_VESA`, full driver set
-  (ATA_PIIX, RT2800USB, BT_HCIBTUSB, THINKPAD_ACPI, SND_CS46XX, PCMCIA/YENTA, …).
-- **OpenMotif 2.3.8 + CDE 2.5.3** built/installed to `/usr/dt` (dtwm/dtterm/dtfile/
-  dtpad/dtsession/Xsession + `libDt*`). Cross-compile fixes are `sed`/hooks in the
-  package `.mk` (no `.patch` files — see DECISIONS.md).
-- **Apps**: dillo (browser), mupdf (mutool/mupdf-x11), feh, mpg123, mc, nano, btop,
-  fastfetch, antiword, lynx. NEdit dropped (Boost; use dtpad/nano).
+Validated end-to-end in QEMU (`-M pc -cpu pentium3`):
 
-## Verified (QEMU)
+1. **Live boot from CD** (El Torito + initramfs) → overlayfs writable root → login.
+2. **Live boot from USB** (USB stick holding the ISO, after an internal IDE disk) →
+   media found on `/dev/sdb` → login.
+3. **Install to internal HDD** (`live.install=1`) → MBR + ext4 + extlinux.
+4. **Boot the installed HDD** → `SYSLINUX 6.03` → ext4 root → login.
 
-Boot → BusyBox userspace → DHCP → dropbear SSH → `startx` → Xorg (modesetting/KMS)
-→ CDE `dtsession`+`dtwm` → `dtterm` + `dtfile` + `dillo` running. `fastfetch`:
-"Pentium III (Katmai)". RAM: console **8 MB**, CDE+apps **~21 MB**.
+## Kernel: Linux 6.12.104 LTS (i686, `-march=pentium3`, glibc 2.41)
 
-## X11 / NeoMagic (see docs/X11.md)
+- `CONFIG_MPENTIUMIII`, SMP off, `CC_OPTIMIZE_FOR_SIZE` (`-Os`).
+- **440BX stability:** `CONFIG_NO_HZ_IDLE` **off** (tickless idle hangs the 440BX
+  APIC/PIT), `CONFIG_CPU_FREQ` off (no SpeedStep on Katmai), `HZ_100`.
+- **Live USB boot needs the storage path built-in:** `USB`, `USB_UHCI_HCD`,
+  `USB_EHCI_HCD`, `USB_STORAGE`, `BLK_DEV_SD`, `BLK_DEV_SR`, `ATA_PIIX` are all `=y`
+  so the initramfs can find the live medium before any module can be loaded.
+- `CONFIG_ACPI_VIDEO` off (conflicts with `thinkpad_acpi` backlight), `USB_XHCI` off
+  (440BX is USB 1.1 only), `BLK_DEV_RAM_SIZE=8192` (was 32 MB on a 64 MB box).
+- NeoMagic `FB_NEOMAGIC=y` (console) + `FB_VESA`; DRM (`bochs`/`simpledrm`) as
+  modules for QEMU only.
 
-- Legacy DDX load failure = full-RELRO `-z now` × lazy sub-module loading; fixed by
-  `xorg.conf` `Load vgahw/int10/fbdevhw/shadow/shadowfb`. Not a neomagic bug.
-- **2D accel — CORRECTED:** the NM2360 has a real BitBLT engine, active in the in-tree
-  `neofb` driver (`CONFIG_FB_NEOMAGIC=y`; kernel 6.18 LTS advertises
-  `HWACCEL_FILLRECT|COPYAREA|IMAGEBLIT`). XAA (X11 *software* API) was removed, not the
-  hardware. Register map + integration plan in `docs/NEOMAGIC*.md`.
-- **`neomagic_diag`** (`BR2_PACKAGE_NEOMAGIC_DIAG`, `/usr/bin/neomagic_diag`): static,
-  userspace BitBLT test tool (fill/blit/ROP), safe (bounded wait, documented regs only).
-  QEMU smoke: `--dry-run` → "not found", clean exit, no crash. Real validation needs the
-  physical 600X (`tools/neomagic_diag/README.md`).
+## Live media: why an initramfs (important)
+
+The kernel's `root=` parser (`block/early-lookup.c`) understands only
+`PARTUUID=`, `PARTLABEL=`, `/dev/<name>` and `MAJOR:MINOR` — **not `LABEL=`**
+(and not filesystem UUIDs). A single hybrid CD/USB image therefore cannot name
+its own root: on a CD the ISO is `/dev/sr0`, on a USB stick it is `/dev/sdX`
+(usually `/dev/sdb`, after the internal PATA disk).
+
+Solution (`board/thinkpad600x/initramfs/init`, ~1.5 MB, loaded via isolinux
+`INITRD`): probe the block devices for the live media (marker
+`/sbin/install-live.sh` + `/boot/bzImage`), mount it read-only, layer a
+RAM-backed **overlayfs** for a writable live root, move `/proc /sys /dev` and
+`switch_root` into it. `live.install=1` runs the installer instead of `/sbin/init`.
+
+Earlier attempts that do **not** work: `root=LABEL=THINKPAD600X_LIV`
+(kernel rejects it: "Disabling rootwait; root= is invalid" → panic) and a plain
+`root=/dev/sr0` (fails on USB).
+
+## On-device installer (`/sbin/install-live.sh`, label 3)
+
+- `sfdisk` creates an MBR + one bootable Linux partition on `/dev/sda`
+  (util-linux "basic set" added for `sfdisk`/`blockdev`/`partx`).
+- `mkfs.ext4 -O ^metadata_csum,^orphan_file,^64bit` — **syslinux/extlinux 6.03
+  cannot read directories on a filesystem with `metadata_csum`/`orphan_file`**
+  (symptom: "No configuration file found").
+- Copies the live tree, writes `extlinux.conf` + `syslinux.cfg`, copies the
+  COM32 modules, runs `extlinux --install /boot`, then writes `mbr.bin` to
+  sector 0 (first 440 bytes only).
+- `extlinux` (i686) + `mbr.bin` are shipped in the rootfs overlay
+  (`usr/sbin/extlinux`, `usr/share/syslinux/mbr.bin`) because Buildroot's
+  syslinux package builds its installers for the *host*. Regeneration is done by
+  `BR2_TARGET_SYSLINUX` + the cross-compile step documented in `docs/INSTALL.md`.
+- Unattended mode for testing: `live.install.auto=1` skips the `YES` prompt.
+
+## X11 / NeoMagic
+
+- `xorg.conf` no longer forces a driver: Xorg auto-detects, giving
+  `neomagic` on the real 600X and `modesetting`/`fbdev`/`vesa` in QEMU.
+- The legacy-DDX helper modules (`vgahw/int10/fbdevhw/shadow/shadowfb`) are still
+  pre-loaded to work around full-RELRO `-z now` breaking their lazy `dlopen`
+  (see `docs/X11.md`). Not a neomagic bug.
+
+## Applications / stack
+
+- OpenMotif 2.3.8 + CDE 2.5.3 → `/usr/dt` (`dtsession`/`dtwm`/`dtterm`/`dtfile`).
+- Dillo, lynx, MuPDF, feh, mpg123, mc, nano, antiword, dropbear, btop, fastfetch.
+- Wi-Fi: `mt7601u` (TL-WN727N 148f:7601) + `rt2800usb`; wpa_supplicant/iw.
+- No systemd/udev; BusyBox init + devtmpfs + mdev; console VGA + serial getty.
 
 ## Release artifacts (`release/`)
 
-- `bzImage` 3.8 MB, `rootfs.ext2` 512 MB, `rootfs.tar` 208 MB
-- `SHA256SUMS.txt` present.
-
-## Docs (complete)
-
-README, DECISIONS, ARCHITECTURE, HARDWARE, BUILD, CDE, X11, OPTIMIZATION, MEMORY,
-BENCHMARKS, TAILSCALE, AMNEZIA, FILESYSTEM (in DECISIONS), LOCALE, INSTALL, RELEASE,
-EXECUTIVE_SUMMARY, STATUS.
+- `bzImage` ~3.8 MB, `rootfs.ext2` 512 MB, `rootfs.tar` ~212 MB.
+- Live hybrid ISO: `/tmp/thinkpad600x-live.iso` (~210 MB) built by
+  `scripts/make-live-iso.sh`.
+- `SHA256SUMS.txt` present (binaries are git-ignored; checksums are tracked).

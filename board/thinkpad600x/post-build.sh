@@ -27,8 +27,8 @@ EOF
 cp "$TARGET_DIR/root/.xinitrc" "$TARGET_DIR/etc/skel/.xinitrc"
 
 # Default UTF-8 locale (glibc's built-in C.UTF-8) so btop/others detect UTF-8.
-printf 'export LANG=C.UTF-8\nexport LC_ALL=C.UTF-8\n' >> "$TARGET_DIR/etc/profile"
-
-# Root shell prompt
-grep -q "root" "$TARGET_DIR/etc/profile" 2>/dev/null || true
+# Guard against duplicate appends on incremental rebuilds.
+if ! grep -q 'LC_ALL=C.UTF-8' "$TARGET_DIR/etc/profile" 2>/dev/null; then
+    printf 'export LANG=C.UTF-8\nexport LC_ALL=C.UTF-8\n' >> "$TARGET_DIR/etc/profile"
+fi
 exit 0

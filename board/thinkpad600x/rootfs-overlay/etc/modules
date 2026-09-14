@@ -1,4 +1,14 @@
-# Modules auto-loaded at boot. bochs-drm provides the QEMU framebuffer for
-# modesetting Xorg; on the real 600X the NeoMagic framebuffer (neofb) is built-in.
-bochs-drm
+# Modules auto-loaded at boot (modprobe resolves dependencies, but keep the
+# logical order). On QEMU, bochs-drm provides the framebuffer used by the
+# modesetting Xorg driver; on the real 600X the NeoMagic framebuffer (neofb)
+# is built into the kernel, so bochs-drm simply fails to load (harmless).
 drm
+bochs-drm
+
+# Wireless: cfg80211/mac80211 are pulled in automatically, the USB drivers give
+# the TL-WN727N (mt7601u, 148f:7601) and older Ralink sticks (rt2800usb).
+mt7601u
+rt2800usb
+
+# Audio: Crystal CS46xx (600X)
+snd-cs46xx
