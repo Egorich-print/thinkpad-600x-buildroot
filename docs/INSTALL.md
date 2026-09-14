@@ -1,131 +1,137 @@
-# INSTALL — записать образ на IBM ThinkPad 600X
+# INSTALL — ThinkPad 600X (2645-4EU)
 
-Ниже — как записать собранный образ `thinkpad600x-buildroot` на реальный
-IBM ThinkPad 600X (2645-4EU). Образ — это **raw ext2 root-filesystem**
-(`rootfs.ext2`) + отдельное ядро (`bzImage`). Для прямой загрузки на железе
-нужен загрузчик (syslinux) в MBR.
+Как собрать носитель, загрузить live-систему и поставить её на внутренний
+PATA-диск 600X.
 
-> ⚠️ Запись raw-образа УНИЧТОЖАЕТ ВСЕ ДАННЫЕ на выбранном диске.
-> Дважды проверь имя диска перед записью.
+## Что собирается
 
-## Что входит в образ
-
-| Файл | Размер | Назначение |
-|------|-------:|-----------|
-| `rootfs.ext2` | 512 MB | ext2 корневая ФС (CDE + X11 + приложения) |
-| `bzImage` | ~4.9 MB | ядро 6.18.7 (i686 pentium3) |
-| `rootfs.tar` | ~210 MB | то же дерево архивированное |
+| Артефакт | Размер | Назначение |
+|----------|-------:|-----------|
+| `/tmp/thinkpad600x-live.iso` | ~210 MB | гибридный live CD/USB (El Torito + isohybrid MBR) |
+| `release/bzImage` | ~3.8 MB | ядро Linux 6.12.104 LTS (i686 pentium3) |
+| `release/rootfs.tar` | ~212 MB | корневое дерево (CDE + X11 + приложения) |
+| `release/rootfs.ext2` | 512 MB | ext4-образ корня (для host-side записи) |
 
 SHA256 — в `release/SHA256SUMS.txt`.
 
-## Проверка контрольной суммы
+Сборка ISO: `scripts/make-live-iso.sh` (нужны `xorriso`, `cpio`, `gzip`;
+isolinux берётся с хоста или из lima VM `br2`).
 
-### macOS
-```sh
-shasum -a 256 rootfs.ext2 bzImage
-# сверить с release/SHA256SUMS.txt
-```
+## Почему в образе есть initramfs
 
-### Linux
-```sh
-sha256sum rootfs.ext2 bzImage
-```
+Ядро **не понимает `root=LABEL=`** (парсер `block/early-lookup.c` принимает только
+`PARTUUID=`, `PARTLABEL=`, `/dev/<имя>` и `MAJOR:MINOR`). Поэтому один и тот же
+образ не может заранее назвать свой корень: на CD это `/dev/sr0`, на USB —
+`/dev/sdX`. Маленький initramfs (`board/thinkpad600x/initramfs/init`) сам находит
+носитель по содержимому, монтирует его и накладывает **overlayfs** (записываемый
+корень в RAM), после чего `switch_root`.
 
-## Способ A — raw-запись ext2 прямо на PATA-диск
+## Запись носителя
 
-Самый простой способ для 600X: ext2-ФС пишется НАЧИНАЯ С НАЧАЛА диска (без
-таблицы разделов). Ядро потом грузится загрузчиком.
+### USB-флешка (основной путь для 600X)
 
-### macOS (host)
-
-1. Узнай устройство диска (подключи диск через USB-IDE/IDE-адаптер):
-   ```sh
-   diskutil list
-   # найди диск (НЕ том!): /dev/disk4 (не /dev/disk4s1)
-   ```
-2. Размонтируй ВСЕ тома диска:
-   ```sh
-   diskutil unmountDisk /dev/disk4
-   ```
-3. Запиши ext2-ФС:
-   ```sh
-   sudo dd if=rootfs.ext2 of=/dev/rdisk4 bs=1m
-   # rdisk = raw device (быстрее); укажи ДИСК, не срез
-   sudo sync
-   diskutil eject /dev/disk4
-   ```
-
-### Linux (host)
+600X не умеет грузиться с USB штатным BIOS — нужен **Plop Boot Manager**
+(`plpbt.iso`/`plpbt.img`, ~544 KB). Порядок:
 
 ```sh
-# 1. найди диск: lsblk (например /dev/sdb)
-# 2. размонтируй: umount /dev/sdb*
-# 3. запись:
-sudo dd if=rootfs.ext2 of=/dev/sdb bs=1M status=progress
-sync
+# 1. записать live-образ на флешку (macOS)
+diskutil list                       # найти флешку, напр. /dev/disk6
+diskutil unmountDisk /dev/disk6
+sudo dd if=/tmp/thinkpad600x-live.iso of=/dev/rdisk6 bs=1m
+sudo sync
+
+# 2. записать Plop на CD-R(W) или дискету
+hdiutil burn /path/to/plpbt.iso -speed 4
 ```
 
-## Способ B — CF/IDE адаптер (или PATA→USB)
+На 600X: `Plop CD` в UltraSlimBay + флешка в USB-порт → BIOS → CD первым →
+в меню Plop выбрать **USB**.
 
-То же самое, только в качестве диска — CompactFlash карта через CF-to-IDE
-адаптер. Запись как в способе A. 600X грузится с любого IDE-устройства, которое
-BIOS видит как "Primary Master".
-
-## Загрузчик (syslinux)
-
-Для автозагрузки ядра на 600X в MBR нужен syslinux. В проекте есть
-`scripts/syslinux.cfg`:
+### CD-R
 
 ```sh
-# после записи ext2 (Linux host, диск /dev/sdb) установи syslinux в MBR:
-# (это кладёт загрузчик; ядро/конфиг уже внутри ext2 в /bzImage)
-sudo syslinux --install /dev/sdb   # требует смонтированного? нет — пишет MBR
+hdiutil burn /tmp/thinkpad600x-live.iso -speed 4
 ```
 
-В `scripts/syslinux.cfg` `KERNEL /bzImage APPEND root=/dev/sda rw console=tty1`.
-На реальной машине консоль — `console=tty1` (VGA), не `ttyS0`.
+CD-RW на убитом приводе 600X даёт `MEDIUM ERROR`; предпочтителен CD-R @ 4x.
 
-## Подготовка к первому включению (BIOS/железо)
+## Загрузка live-системы
 
-1. Установи HDD/CF в отсек (или UltraBay).
-2. В BIOS (F1 при старте ThinkPad): **Startup → Boot** — поставь IDE/HDD первым.
-3. Убедись, что нет пароля на HDD (Hard Disk Password в BIOS).
-4. Компьютер 600X НЕ грузится с USB — только IDE/PATA (или CF-IDE).
-5. Дисплей 1024×768 — NeoMagic; ядро использует `neofb` (встроен =y).
+Меню isolinux (цифры + Enter):
 
-## Первая загрузка
+| Клавиша | Режим |
+|---------|-------|
+| `1` | Live CDE (`acpi=off`, `clocksource=jiffies`) |
+| `2` | Live Safe (+ `noapic nolapic nomodeset`) |
+| `3` | **Install to internal HDD** (`/dev/sda`) |
 
-1. Логин: `root`, пароль: `thinkpad600x` (СРАЗУ смени: `passwd`).
-2. Сеть (Ethernet/PCMCIA): `udhcpc -i eth0` или настроить static.
-3. Запуск CDE: `startx /usr/dt/bin/Xsession`.
-4. Терминал: `dtterm`; файл-менеджер: `dtfile`; редактор: `dtpad` / `nano`.
-5. Браузер: `dillo`; PDF: `mupdf-x11`; изображения: `feh`; музыка: `mpg123`.
-6. Мониторинг: `btop`, `fastfetch`.
-7. Выключение: `poweroff` / `reboot`.
+Логин live-системы: `root` / `thinkpad600x`. CDE: `startx /usr/dt/bin/Xsession`.
 
-## SSH
+## Установка на HDD (пункт 3)
+
+Скрипт `/sbin/install-live.sh`:
+
+1. показывает `/proc/partitions` и спрашивает подтверждение (`YES`);
+2. `sfdisk` создаёт MBR + один загрузочный раздел на `/dev/sda`;
+3. `mkfs.ext4 -O ^metadata_csum,^orphan_file,^64bit` (extlinux 6.03 не читает
+   каталоги с `metadata_csum`/`orphan_file`);
+4. копирует live-дерево, пишет `/boot/extlinux.conf` + `syslinux.cfg`;
+5. `extlinux --install /boot` (VBR) и `mbr.bin` в сектор 0;
+6. перезагружается.
+
+Автономный режим для тестов: добавить `live.install.auto=1` в параметры ядра.
+
+## Первая загрузка с HDD
+
+1. Логин `root` / `thinkpad600x` (сразу `passwd`).
+2. Сеть: `udhcpc -i eth0` (или статически).
+3. CDE: `startx /usr/dt/bin/Xsession`.
+4. Wi-Fi (TL-WN727N): `modprobe mt7601u`, затем `wpa_supplicant`/`iw`.
+5. Выключение: `poweroff` / перезагрузка: `reboot`.
+
+## Пересборка компонентов
+
+### Ядро + rootfs (lima VM)
 
 ```sh
-# dropbear уже запущен (S50dropbear). Подключение:
-ssh -p 22 root@<ip>   # пароль thinkpad600x (смени!)
-# или по ключу: ключ в /root/.ssh/authorized_keys
+limactl shell br2 -- bash -c "cd ~/buildroot && \
+  make O=~/br2-out BR2_EXTERNAL=/Users/<you>/.../thinkpad-600x-buildroot thinkpad600x_defconfig && \
+  make O=~/br2-out BR2_EXTERNAL=/Users/<you>/.../thinkpad-600x-buildroot -j10"
+# скопировать images/{bzImage,rootfs.tar,rootfs.ext2} в release/
 ```
 
-## Tailscale (опционально)
+### i686 `extlinux` (если нужно пересобрать overlay-бинарь)
 
-См. `docs/TAILSCALE.md`. Для PIII нужен статический `geode`-бинарь
-(`GO386=softfloat`), режим `--tun=userspace-networking`.
+Buildroot собирает установщики syslinux под **хост** (aarch64), поэтому `extlinux`
+для target пересобирается вручную из дерева syslinux:
 
-## AmneziaWG (опционально)
+```sh
+limactl shell br2 -- bash -c '
+cd ~/br2-out/build/syslinux-6.03
+export PATH=~/br2-out/host/bin:$PATH
+H=~/br2-out/host
+rm -f bios/extlinux/*.o bios/extlinux/extlinux
+make ASCIIDOC_OK=-1 A2X_XML_OK=-1 \
+  CC=i686-buildroot-linux-gnu-gcc LD=i686-buildroot-linux-gnu-ld \
+  OBJCOPY=i686-buildroot-linux-gnu-objcopy AS=i686-buildroot-linux-gnu-as \
+  NASM=$H/bin/nasm CC_FOR_BUILD=i686-buildroot-linux-gnu-gcc \
+  CFLAGS_FOR_BUILD="-Os -D_FILE_OFFSET_BITS=64 -D_GNU_SOURCE" \
+  LDFLAGS_FOR_BUILD="" PYTHON=$H/bin/python3 bios || true
+file bios/extlinux/extlinux   # должен быть ELF 32-bit i386
+'
+# скопировать в board/thinkpad600x/rootfs-overlay/usr/sbin/extlinux
+```
 
-`docs/AMNEZIA.md`: CLI через `amneziawg-linux-kernel-module` (C) + `amneziawg-tools`.
+`mbr.bin` копируется из `~/br2-out/images/syslinux/mbr.bin` в
+`board/thinkpad600x/rootfs-overlay/usr/share/syslinux/`.
 
-## Восстановление, если CDE не стартует
+## Диагностика
 
-1. Ctrl-Alt-F1 → консоль; логин root.
-2. Лог Xorg: `cat /var/log/Xorg.0.log`.
-3. Лог CDE: `cat /root/.dt/startlog /root/.dt/errorlog`.
-4. Кернел-лог: `dmesg | tail`.
-5. Проверка ФС: `fsck.ext2 -f /dev/root` (с живого носителя).
-6. Перезапуск вручную: `Xorg :0 -config /etc/X11/xorg.conf &` → `DISPLAY=:0 /usr/dt/bin/Xsession &`.
-7. Полная перезапись образа — способ A.
+| Симптом | Причина / решение |
+|--------|-------------------|
+| `VFS: Cannot open root device "LABEL=..."` | `root=LABEL=` не поддерживается ядром — используется initramfs |
+| `devtmpfs: error mounting -2` | корень не смонтирован (initramfs не нашёл носитель) |
+| `No configuration file found` (extlinux) | ext4 с `metadata_csum`/`orphan_file` — пересоздать ФС |
+| `SYSLINUX ... boot:` без ядра | нет `ldlinux.c32`/`extlinux.conf` в `/boot` |
+| USB не виден при загрузке | включить `USB_STORAGE=y` (уже включено) |
+| Зависание на BogoMIPS | `NO_HZ_IDLE=n`, `clocksource=jiffies` |
