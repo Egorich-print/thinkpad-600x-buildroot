@@ -65,7 +65,8 @@ CD-RW на убитом приводе 600X даёт `MEDIUM ERROR`; предп�
 | `2` | Live Safe (+ `noapic nolapic nomodeset`) |
 | `3` | **Install to internal HDD** (`/dev/sda`) |
 
-Логин live-системы: `root` / `thinkpad600x`. CDE: `startx /usr/dt/bin/Xsession`.
+Логин live-системы: `root` **без пароля** (пустой пароль — Enter). CDE:
+`startx /usr/dt/bin/Xsession`.
 
 ## Установка на HDD (пункт 3)
 
@@ -83,13 +84,23 @@ CD-RW на убитом приводе 600X даёт `MEDIUM ERROR`; предп�
 
 ## Первая загрузка с HDD
 
-1. Логин `root` / `thinkpad600x` (сразу `passwd`).
+1. Логин `root` — **без пароля** (просто Enter).
 2. Сеть: `udhcpc -i eth0` (или статически).
 3. CDE: `startx /usr/dt/bin/Xsession`.
 4. Wi-Fi (TL-WN727N): `modprobe mt7601u`, затем `wpa_supplicant`/`iw`.
-5. Выключение: `poweroff` / перезагрузка: `reboot`.
+5. Звук (CS46xx): прошивка в `/lib/firmware/cs46xx/` (см. ниже); проверка —
+   `aplay -l` / `speaker-test`.
+6. Выключение: `poweroff` / перезагрузка: `reboot`.
 
 ## Пересборка компонентов
+
+### Прошивка звука CS46xx (несвободная, не в репозитории)
+
+`scripts/fetch-cs46xx-firmware.sh` скачивает `alsa-firmware` и кладёт
+`cs46xx/{ba1,cwc4630,cwcasync,cwcbinhack,cwcdma,cwcsnoop}` в overlay:
+```sh
+./scripts/fetch-cs46xx-firmware.sh
+```
 
 ### Ядро + rootfs (lima VM)
 

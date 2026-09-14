@@ -72,6 +72,10 @@ Earlier attempts that do **not** work: `root=LABEL=THINKPAD600X_LIV`
 - OpenMotif 2.3.8 + CDE 2.5.3 → `/usr/dt` (`dtsession`/`dtwm`/`dtterm`/`dtfile`).
 - Dillo, lynx, MuPDF, feh, mpg123, mc, nano, antiword, dropbear, btop, fastfetch.
 - Wi-Fi: `mt7601u` (TL-WN727N 148f:7601) + `rt2800usb`; wpa_supplicant/iw.
+- Audio: Crystal CS46xx (600X) with the DSP firmware installed under
+  `/lib/firmware/cs46xx/` (`ba1 cwc4630 …`) — fetched at build time by
+  `scripts/fetch-cs46xx-firmware.sh` (non-free, not committed).
+- **Root has an empty password** (hobby machine): log in as `root`, just Enter.
 - No systemd/udev; BusyBox init + devtmpfs + mdev; console VGA + serial getty.
 
 ## Release artifacts (`release/`)
