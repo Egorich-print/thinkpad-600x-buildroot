@@ -21,7 +21,13 @@ ln -sf /bin/mksh "$TARGET_DIR/usr/bin/ksh"
 # Root .xinitrc -> launch CDE (startx runs this).
 mkdir -p "$TARGET_DIR/root" "$TARGET_DIR/etc/skel"
 cat > "$TARGET_DIR/root/.xinitrc" <<'EOF'
-# Start the CDE session.
+# CDE desktop.
+#
+# dtwm provides the window manager *and* the CDE Front Panel (WmFP).  In this
+# reduced build dtsession never manages to spawn it, so start dtwm here and
+# then run Xsession, which sets up the DT search paths / fonts and starts
+# ttsession + dtsession.
+/usr/dt/bin/dtwm &
 exec /usr/dt/bin/Xsession
 EOF
 cp "$TARGET_DIR/root/.xinitrc" "$TARGET_DIR/etc/skel/.xinitrc"
