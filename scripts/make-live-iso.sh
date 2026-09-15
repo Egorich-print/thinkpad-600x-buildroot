@@ -74,15 +74,15 @@ DISPLAY boot.msg
 LABEL 1
   KERNEL /boot/bzImage
   INITRD /boot/initrd.img
-  APPEND console=tty0 console=ttyS0,115200 acpi=off clocksource=jiffies tsc=unstable
+  APPEND console=ttyS0,115200 console=tty0 acpi=off clocksource=jiffies tsc=unstable
 LABEL 2
   KERNEL /boot/bzImage
   INITRD /boot/initrd.img
-  APPEND console=tty0 console=ttyS0,115200 acpi=off noapic nolapic nomodeset clocksource=jiffies tsc=unstable
+  APPEND console=ttyS0,115200 console=tty0 acpi=off noapic nolapic nomodeset clocksource=jiffies tsc=unstable
 LABEL 3
   KERNEL /boot/bzImage
   INITRD /boot/initrd.img
-  APPEND console=tty0 console=ttyS0,115200 acpi=off noapic nolapic nomodeset clocksource=jiffies tsc=unstable live.install=1
+  APPEND console=ttyS0,115200 console=tty0 acpi=off noapic nolapic nomodeset clocksource=jiffies tsc=unstable live.install=1
 EOF
 cat > "$STAGING/boot/isolinux/boot.msg" <<'EOF'
 ThinkPad 600X Live (6.12.104)
@@ -162,7 +162,7 @@ PROMPT 0
 TIMEOUT 30
 LABEL linux
   KERNEL /boot/bzImage
-  APPEND root=/dev/sda1 rootfstype=ext4 rw rootwait console=tty0 console=ttyS0,115200 acpi=off clocksource=jiffies tsc=unstable
+  APPEND root=/dev/sda1 rootfstype=ext4 rw rootwait console=ttyS0,115200 console=tty0 acpi=off clocksource=jiffies tsc=unstable
 CFG
 cp /mnt/target/boot/extlinux.conf /mnt/target/boot/syslinux.cfg
 
