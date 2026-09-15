@@ -1,0 +1,11 @@
+config BR2_PACKAGE_XF86_INPUT_MOUSE
+	bool "xf86-input-mouse"
+	depends on BR2_PACKAGE_XORG7
+	select BR2_PACKAGE_XORGPROTO
+	help
+	  Classic X.Org mouse input driver (PS/2 via /dev/input/mice).
+
+	  Unlike xf86-input-evdev this driver does not require udev, which
+	  matters on this image: it uses mdev/devtmpfs and has no udev, so the
+	  evdev package cannot be selected (Buildroot guards it with
+	  "depends on BR2_PACKAGE_HAS_UDEV").

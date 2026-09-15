@@ -1,0 +1,9 @@
+config BR2_PACKAGE_XF86_INPUT_KEYBOARD
+	bool "xf86-input-keyboard"
+	depends on BR2_PACKAGE_XORG7
+	select BR2_PACKAGE_XORGPROTO
+	help
+	  Classic X.Org keyboard input driver (the console/PS2 keyboard).
+
+	  Same rationale as xf86-input-mouse: no udev in this image, so
+	  xf86-input-evdev cannot be selected.
