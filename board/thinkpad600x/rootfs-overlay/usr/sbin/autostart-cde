@@ -1,0 +1,21 @@
+#!/bin/sh
+#
+# Auto-login for the VGA console (hobby ThinkPad 600X).
+#
+# Replaces the plain getty on tty1: start the CDE session straight away, and
+# when it exits fall back to an interactive root shell.  A plain login is still
+# available on the serial console (ttyS0).
+#
+export HOME=/root
+export PATH=/usr/dt/bin:/usr/bin:/bin:/usr/sbin:/sbin
+export LANG=C.UTF-8
+export LC_ALL=C.UTF-8
+cd /root 2>/dev/null || cd / || true
+
+# Only start X if no session is already running (DISPLAY unset).
+if [ -z "$DISPLAY" ]; then
+    /usr/bin/startx /usr/dt/bin/Xsession
+fi
+
+# CDE has exited: give the user a root shell on the console.
+exec /bin/sh -l

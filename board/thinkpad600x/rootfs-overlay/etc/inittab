@@ -8,8 +8,9 @@ null::sysinit:/bin/hostname -F /etc/hostname
 # now run any rc scripts
 ::sysinit:/etc/init.d/rcS
 
-# Physical VGA console
-tty1::respawn:/sbin/getty 38400 tty1
+# Physical VGA console: automatically log in as root and start the CDE
+# session (see /usr/sbin/autostart-cde).
+tty1::respawn:/usr/sbin/autostart-cde
 
 # Serial console (dock / QEMU)
 ttyS0::respawn:/sbin/getty -L 115200 ttyS0 vt100
