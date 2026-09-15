@@ -1,0 +1,48 @@
+# ######################################################################
+# 
+#      unsupported.dt
+# 
+#      Action and DataType definitions for unsupported software.
+# 
+#     (c) Copyright 1993, 1994 Hewlett-Packard Company
+#     (c) Copyright 1993, 1994 International Business Machines Corp.
+#     (c) Copyright 1993, 1994 Sun Microsystems, Inc.
+#     (c) Copyright 1993, 1994 Unix System Labs, Inc., a subsidiary 
+#         of Novell, Inc.
+# 
+#      $XConsortium: unsupported.dt.src /main/4 1996/04/23 17:36:23 drk $
+# 
+# #####################################################################
+# ##########################################################################
+# 
+#  WARNING:  This file may be overwritten in subsequent installations of
+#      DT.  Consequently, any system wide changes should be made to
+#      an equivalent database file in /usr/dt/types and not 
+#      in this file.
+# 
+# ##########################################################################
+ACTION DtTypes
+{
+        LABEL		%|nls-32-#DtTypes#|
+        ARG_COUNT	0
+	TYPE		COMMAND
+	WINDOW_TYPE	NO_STDIO
+	EXEC_STRING	/usr/dt/bin/dtterm -e /usr/bin/ksh -c '/usr/dt/bin/dttypes;'
+	DESCRIPTION	%|nls-9002-#The#|
+}
+ACTION DtTypes
+{
+        LABEL		%|nls-32-#DtTypes#|
+	TYPE		COMMAND
+	WINDOW_TYPE	PERM_TERMINAL
+	EXEC_STRING	sh -c '/usr/dt/bin/dttypes -type "%(File)Arg_1%";                  echo "%|nls-9011-#Select#|"'
+	DESCRIPTION	%|nls-9002-#The#|
+}
+ACTION Clipboard
+{
+        LABEL		%|nls-27-#Clipboard#|
+	TYPE		COMMAND
+	WINDOW_TYPE	NO_STDIO
+	EXEC_STRING	/usr/local/bin/X11/xclipboard
+	DESCRIPTION	%|nls-9003-#The#|
+}
