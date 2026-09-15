@@ -126,6 +126,10 @@ BR2_PACKAGE_WIRELESS_TOOLS=y
 BR2_PACKAGE_IW=y
 BR2_PACKAGE_USBUTILS=y
 
+# --- RPC portmapper: CDE ToolTalk (ttsession) is built without
+#     OPT_UNIX_SOCKET_RPC, so its RPC server needs rpcbind to register. ---
+BR2_PACKAGE_RPCBIND=y
+
 # --- Filesystem images ---
 BR2_TARGET_ROOTFS_EXT2=y
 BR2_TARGET_ROOTFS_EXT2_4=y

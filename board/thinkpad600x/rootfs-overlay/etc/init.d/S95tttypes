@@ -1,0 +1,30 @@
+#!/bin/sh
+#
+# Compile the CDE ToolTalk static-type database (types.xdr).
+#
+# ToolTalk's ttsession refuses to start unless it can load a types database
+# (see _Tt_typedb::init_xdr() -> init_types() in CDE).  The types are normally
+# built by programs/tttypes, but that runs the *target* tt_type_comp at build
+# time, which cannot execute on an aarch64 build host.  So compile them here,
+# on the target, into /etc/tt/types.xdr (one of ttsession's search paths).
+#
+TTC=/usr/dt/bin/tt_type_comp
+D=/usr/dt/appconfig/tttypes
+
+[ -x "$TTC" ] || exit 0
+[ -d "$D" ] || exit 0
+# Already compiled (e.g. on the installed ext4 root)?
+[ -s /etc/tt/types.xdr ] && exit 0
+
+mkdir -p /etc/tt
+cd /etc/tt || exit 0
+rm -f types.xdr .tt_lock
+for f in "$D"/*.ptype; do
+    [ -f "$f" ] || continue
+    TTPATH=. "$TTC" -sd user -m "$f" >/dev/null 2>&1 || true
+done
+
+if [ -s types.xdr ]; then
+    echo "ToolTalk types compiled ($(wc -c < types.xdr) bytes)"
+fi
+exit 0
