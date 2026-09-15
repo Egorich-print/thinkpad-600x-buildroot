@@ -37,4 +37,16 @@ cp "$TARGET_DIR/root/.xinitrc" "$TARGET_DIR/etc/skel/.xinitrc"
 if ! grep -q 'LC_ALL=C.UTF-8' "$TARGET_DIR/etc/profile" 2>/dev/null; then
     printf 'export LANG=C.UTF-8\nexport LC_ALL=C.UTF-8\n' >> "$TARGET_DIR/etc/profile"
 fi
+
+# Dillo needs a per-user config directory; otherwise it prints
+# "Cannot open file '~/.dillo/dillorc'" on first run.  Seed it for root and
+# for new users (skel) from the system dillo config.
+if [ -d "$TARGET_DIR/etc/dillo" ]; then
+    for d in "$TARGET_DIR/root/.dillo" "$TARGET_DIR/etc/skel/.dillo"; do
+        mkdir -p "$d"
+        for f in dillorc dpidrc domainrc keysrc; do
+            [ -f "$TARGET_DIR/etc/dillo/$f" ] && cp -f "$TARGET_DIR/etc/dillo/$f" "$d/$f"
+        done
+    done
+fi
 exit 0
