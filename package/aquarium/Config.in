@@ -1,0 +1,7 @@
+config BR2_PACKAGE_AQUARIUM
+	bool "aquarium"
+	select BR2_PACKAGE_NCURSES
+	help
+	  Small native ASCII aquarium (fish, bubbles, seaweed) written in C.
+	  A lightweight replacement for the Perl "asciiquarium": ncurses only,
+	  no floating point / SSE, tuned for the ThinkPad 600X (Pentium III).
