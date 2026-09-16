@@ -1,0 +1,7 @@
+config BR2_PACKAGE_NYANCAT
+	bool "nyancat"
+	select BR2_PACKAGE_NCURSES
+	help
+	  Nyan Cat in the terminal (ANSI, ncurses). Very light.
+
+	  https://github.com/klange/nyancat

@@ -1,0 +1,8 @@
+config BR2_PACKAGE_CMATRIX
+	bool "cmatrix"
+	select BR2_PACKAGE_NCURSES
+	help
+	  Terminal "Matrix" effect: falling green characters. Light enough for
+	  the Pentium III (uses ncurses, no X).
+
+	  https://github.com/abishekvashok/cmatrix
