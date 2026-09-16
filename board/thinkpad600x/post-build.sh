@@ -44,7 +44,7 @@ fi
 if [ -d "$TARGET_DIR/etc/dillo" ]; then
     for d in "$TARGET_DIR/root/.dillo" "$TARGET_DIR/etc/skel/.dillo"; do
         mkdir -p "$d"
-        for f in dillorc dpidrc domainrc keysrc; do
+        for f in dillorc dpidrc domainrc keysrc hsts_preload; do
             [ -f "$TARGET_DIR/etc/dillo/$f" ] && cp -f "$TARGET_DIR/etc/dillo/$f" "$d/$f"
         done
     done

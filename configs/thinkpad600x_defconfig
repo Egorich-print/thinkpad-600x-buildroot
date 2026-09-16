@@ -141,6 +141,10 @@ BR2_PACKAGE_USBUTILS=y
 BR2_PACKAGE_RPCBIND=y
 
 # --- Extra low-resource apps (office / system / utilities / browsers) ---
+# TrueType fonts: Xft/fontconfig apps (Dillo, ...) need them; the image only
+# ships bitmap X11 fonts otherwise ("Unable to find fonts").
+BR2_PACKAGE_DEJAVU=y
+BR2_PACKAGE_LIBERATION=y
 # Browsers (light): links (text); dillo + lynx are above.
 BR2_PACKAGE_LINKS=y
 # Editors
