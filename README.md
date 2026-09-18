@@ -72,4 +72,5 @@ see `.gitignore`; checksums tracked in `release/SHA256SUMS.txt`).
 - `docs/OPTIMIZATION.md` / `docs/MEMORY.md` / `docs/BENCHMARKS.md` — measurements
 - `docs/TAILSCALE.md` / `docs/AMNEZIA.md` — VPN feasibility
 - `docs/INSTALL.md` / `docs/RELEASE.md` — deployment + release process
+- `docs/adr/` — Architecture Decision Records (ADR-001…010)
 - `docs/DECISIONS.md` — decision log (architecture + rationale)

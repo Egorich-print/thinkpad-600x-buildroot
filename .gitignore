@@ -7,8 +7,6 @@
 /release/*.log
 /tmp/*.iso
 
-# Stale QEMU workspace dumps
-/images/
 
 # Compiled tool binaries
 /tools/neomagic_diag/neomagic_diag
