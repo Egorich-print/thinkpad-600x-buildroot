@@ -27,10 +27,22 @@ echo "Extracting cs46xx firmware ..."
 tar xjf "$TMP/alsa-firmware.tar.bz2" -C "$TMP" "alsa-firmware-${VER}/cs46xx"
 
 mkdir -p "$DEST"
+missing=""
 for f in ba1 cwc4630 cwcasync cwcbinhack cwcdma cwcsnoop; do
     src="$TMP/alsa-firmware-${VER}/cs46xx/$f"
-    [ -f "$src" ] && cp "$src" "$DEST/$f"
+    if [ -f "$src" ]; then
+        cp "$src" "$DEST/$f"
+    else
+        missing="$missing $f"
+    fi
 done
+# A half-populated firmware directory boots fine and then fails in snd-cs46xx,
+# so never leave one behind.
+if [ -n "$missing" ]; then
+    echo "ERROR: not in alsa-firmware-${VER}:$missing" >&2
+    rm -rf "$DEST"
+    exit 1
+fi
 
 echo "Installed into $DEST:"
 ls -l "$DEST"

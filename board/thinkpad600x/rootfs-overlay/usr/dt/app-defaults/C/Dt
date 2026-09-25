@@ -1,0 +1,17 @@
+!######################################################################
+!#
+!#     Dt
+!#
+!#     Common Desktop Environment (CDE)
+!#
+!#     Base application defaults included by every CDE client's app-defaults
+!#     file (Dtfile, Dtcalc, Dticon, Dtwm, ...).
+!#
+!#     This reduced CDE build does not install the upstream base resource
+!#     files, so the "#include" below would fail and every client would fall
+!#     back to its built-in defaults.  Those defaults are what this image has
+!#     always run with, so this file intentionally carries no overrides: it
+!#     exists to make the include resolvable and to keep dtstyle from
+!#     complaining about a missing base.
+!#
+!######################################################################

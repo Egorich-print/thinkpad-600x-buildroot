@@ -18,11 +18,10 @@ export PATH=/bin:/sbin:/usr/bin:/usr/sbin
 
 echo "=== ThinkPad 600X live boot ==="
 
-mount -t proc    proc    /proc 2>/dev/null
+mount -t proc    proc    /proc  || { echo "LIVE: cannot mount /proc"; exec sh; }
 mount -t sysfs   sysfs   /sys  2>/dev/null
 mount -t devtmpfs devtmpfs /dev 2>/dev/null || mount -t tmpfs tmpfs /dev 2>/dev/null
 
-MEDIA=""
 find_media() {
   i=0
   while [ "$i" -lt 15 ]; do
@@ -33,7 +32,6 @@ find_media() {
       mkdir -p /media
       if mount -t iso9660 -o ro "$dev" /media 2>/dev/null; then
         if [ -e /media/sbin/install-live.sh ] && [ -e /media/boot/bzImage ]; then
-          MEDIA="$dev"
           echo "LIVE: media found on $dev"
           return 0
         fi
@@ -53,7 +51,9 @@ fi
 
 # Read the install flag now: /proc is moved into the new root further down.
 INSTALL=0
-grep -q 'live.install=1' /proc/cmdline && INSTALL=1
+for tok in $(cat /proc/cmdline 2>/dev/null); do
+  [ "$tok" = "live.install=1" ] && INSTALL=1
+done
 
 # Writable, RAM-backed overlay on top of the read-only iso9660 media.
 mkdir -p /overlay /newroot
@@ -63,19 +63,21 @@ if mount -t overlay overlay \
      -o lowerdir=/media,upperdir=/overlay/upper,workdir=/overlay/work \
      /newroot 2>/dev/null; then
   echo "LIVE: overlayfs ready (writable root)"
-else
+elif mount -o bind /media /newroot 2>/dev/null; then
   echo "LIVE: overlayfs unavailable, read-only root"
-  mount --bind /media /newroot 2>/dev/null || { ln -s /media /newroot; }
+else
+  echo "LIVE: FATAL: no usable root filesystem"
+  exec sh
 fi
 
-mount -o move /proc /newroot/proc 2>/dev/null
+mount -o move /proc /newroot/proc || { echo "LIVE: FATAL: cannot move /proc"; exec sh; }
 mount -o move /sys  /newroot/sys  2>/dev/null
 mount -o move /dev  /newroot/dev  2>/dev/null
 
 if [ "$INSTALL" = "1" ]; then
   echo "LIVE: installer mode"
-  exec switch_root /newroot /sbin/install-live.sh
+  exec switch_root -c /dev/console /newroot /sbin/install-live.sh
 fi
 
 echo "LIVE: switch_root -> /sbin/init"
-exec switch_root /newroot /sbin/init
+exec switch_root -c /dev/console /newroot /sbin/init

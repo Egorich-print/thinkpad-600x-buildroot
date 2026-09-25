@@ -182,7 +182,7 @@ static void spawn_fish(int i, int first)
     f->y = 2 + irand(LINES > (h + 6) ? (LINES - h - 6) : 1);
     f->dir = irand(2) ? 1 : -1;
     f->speed = SP(1) + irand(3) * (FIX / 4);          /* 1.00 .. 1.50 px/frame */
-    f->x = first ? irand(COLS) : (f->dir > 0 ? -w : COLS + w);
+    f->x = first ? irand(SP(COLS)) : (f->dir > 0 ? -SP(w) : SP(COLS + w));
 }
 
 static void spawn_bubble(struct bubble *b)
@@ -288,6 +288,14 @@ int main(int argc, char **argv)
             refresh();
             clear();
             resized = 0;
+            if (LINES < 8 || COLS < 20) {
+                attron(COLOR_PAIR(C_SAND));
+                mvaddstr(0, 0, "terminal too small (need 20x8)");
+                attroff(COLOR_PAIR(C_SAND));
+                refresh();
+                usleep((useconds_t)frame_ms * 1000);
+                continue;
+            }
             surface_y = 1;
             sand_y = LINES - 1;
             init_all();

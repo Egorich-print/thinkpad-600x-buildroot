@@ -84,22 +84,23 @@ static volatile uint32_t *mmio; /* BAR1 base (2 MB window) */
 static uint32_t blt_read(unsigned reg)        { return blt[reg / 4]; }
 static void     blt_write(unsigned reg, uint32_t v) { blt[reg / 4] = v; }
 
-static int wait_idle(unsigned timeout_ms)
+static void wait_idle_or_die(unsigned timeout_ms, const char *what)
 {
     struct timespec t;
     long long start;
+    long long now;
     clock_gettime(CLOCK_MONOTONIC, &t);
     start = (long long)t.tv_sec * 1000 + t.tv_nsec / 1000000;
 
     for (;;) {
         if (!(blt_read(REG_BLTSTAT) & NEO_BS0_BLT_BUSY))
-            return 0;
+            return;
         clock_gettime(CLOCK_MONOTONIC, &t);
-        long long now = (long long)t.tv_sec * 1000 + t.tv_nsec / 1000000;
+        now = (long long)t.tv_sec * 1000 + t.tv_nsec / 1000000;
         if (now - start > (long long)timeout_ms) {
-            fprintf(stderr, "wait_idle: TIMEOUT after %ums (engine stuck)\n",
-                    timeout_ms);
-            return -1;
+            fprintf(stderr, "%s: TIMEOUT after %ums (engine stuck); aborting\n",
+                    what, timeout_ms);
+            exit(EXIT_FAILURE);
         }
     }
 }
@@ -123,7 +124,7 @@ static void accel_init(int xres, int bpp)
     uint32_t bltMod = mode1_for(bpp);
     uint32_t pitch  = (uint32_t)xres * ((bpp + 7) >> 3);
 
-    wait_idle(100);
+    wait_idle_or_die(100, "accel init");
     blt_write(REG_BLTSTAT, bltMod << 16);
     blt_write(REG_PITCH,   (pitch << 16) | pitch);
 }
@@ -135,11 +136,13 @@ static void hw_fill(int x, int y, int w, int h, uint32_t color, int bpp, int xre
     uint32_t dst = (uint32_t)(x + y * xres) * ((bpp + 7) >> 3);
     uint32_t rop = rop_xor ? NEOMAGIC_ROP_XOR : NEOMAGIC_ROP_COPY;
 
+    wait_idle_or_die(500, rop_xor ? "ROP XOR" : "fill");
     blt_write(REG_BLTCNTL,
               NEO_BC3_FIFO_EN | NEO_BC0_SRC_IS_FG | NEO_BC3_SKIP_MAPPING | rop);
     blt_write(REG_FGCOLOR, color);
     blt_write(REG_DSTSTART, dst);
     blt_write(REG_XYEXT, ((uint32_t)h << 16) | ((uint32_t)w & 0xffff));
+    wait_idle_or_die(500, rop_xor ? "ROP XOR" : "fill");
 }
 
 /* screen-to-screen copy — identical to neo2200_copyarea() */
@@ -162,10 +165,12 @@ static void hw_copy(int sx, int sy, int dx, int dy, int w, int h, int bpp,
     uint32_t src = sxb * bytes + syb * line_len;
     uint32_t dst = dxb * bytes + dyb * line_len;
 
+    wait_idle_or_die(500, "copy");
     blt_write(REG_BLTCNTL, bltCntl);
     blt_write(REG_SRCSTART, src);
     blt_write(REG_DSTSTART, dst);
     blt_write(REG_XYEXT, ((uint32_t)h << 16) | ((uint32_t)w & 0xffff));
+    wait_idle_or_die(500, "copy");
 }
 
 static long long now_us(void)
@@ -181,10 +186,12 @@ static void sw_fill(volatile uint8_t *fb, int x, int y, int w, int h, int bpp,
 {
     int bytes = (bpp + 7) >> 3;
     int line = xres * bytes;
-    for (int j = 0; j < h; j++) {
+    int i;
+    int j;
+    for (j = 0; j < h; j++) {
         if (bytes == 2) {
             volatile uint16_t *row = (volatile uint16_t *)(fb + (y + j) * line);
-            for (int i = 0; i < w; i++) row[x + i] = color;
+            for (i = 0; i < w; i++) row[x + i] = color;
         } else {
             volatile uint8_t *row = fb + (y + j) * line;
             memset((void *)(row + x), color, w);
@@ -198,6 +205,7 @@ static int find_device(uint64_t *fb_base, uint64_t *fb_len, uint64_t *mmio_base,
     DIR *d = opendir("/sys/bus/pci/devices");
     if (!d) { perror("opendir /sys/bus/pci/devices"); return -1; }
     struct dirent *de;
+    int bar;
     while ((de = readdir(d))) {
         if (de->d_name[0] == '.') continue;
         char path[512];
@@ -213,7 +221,7 @@ static int find_device(uint64_t *fb_base, uint64_t *fb_len, uint64_t *mmio_base,
 
         if (v == PCI_VENDOR_NEOMAGIC && dev == PCI_DEVICE_NM2360) {
             snprintf(sysdev, sysdev_sz, "%s", de->d_name);
-            for (int bar = 0; bar < 2; bar++) {
+            for (bar = 0; bar < 2; bar++) {
                 snprintf(path, sizeof path,
                          "/sys/bus/pci/devices/%s/resource%d", de->d_name, bar);
                 f = fopen(path, "r");
@@ -266,10 +274,10 @@ static int mmap_resources(const char *sysdev, volatile uint8_t **fb_out,
  *    would kick off a spurious BLT. Instead, on entry we wait for the engine to
  *    go idle, run the tests, and on exit we wait idle again and re-run
  *    accel_init() to leave a consistent (depth/pitch, non-triggering) state.
- *  - `wait_idle()` is time-bounded; a stuck engine aborts the test instead of
- *    looping forever. Userspace mmap of documented registers cannot panic the
- *    kernel; worst case on a misbehaving chip is visual corruption, which is
- *    cleared by re-initialising the mode.
+ *  - `wait_idle_or_die()` is time-bounded; a stuck engine aborts the test
+ *    instead of looping forever. Userspace mmap of documented registers
+ *    cannot panic the kernel; worst case on a misbehaving chip is visual
+ *    corruption, which is cleared by re-initialising the mode.
  */
 static void usage(const char *a)
 {
@@ -282,8 +290,9 @@ int main(int argc, char **argv)
 {
     int xres = 1024, yres = 768, bpp = 16;
     int flag_fill = 0, flag_blit = 0, flag_rop = 0, flag_dry = 0;
+    int i;
 
-    for (int i = 1; i < argc; i++) {
+    for (i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--test-fill")) flag_fill = 1;
         else if (!strcmp(argv[i], "--test-blit")) flag_blit = 1;
         else if (!strcmp(argv[i], "--test-rop")) flag_rop = 1;
@@ -294,12 +303,41 @@ int main(int argc, char **argv)
         else { usage(argv[0]); return 2; }
     }
 
+    if (bpp != 16) {
+        fprintf(stderr, "bpp %d is not supported by this tool; only 16 bpp is supported\n",
+                bpp);
+        return 2;
+    }
+    if (xres <= 0 || yres <= 0) {
+        fprintf(stderr, "invalid geometry %dx%d; width and height must be positive\n",
+                xres, yres);
+        return 2;
+    }
+
     uint64_t fb_base = 0, fb_len = 0, mmio_base = 0, mmio_len = 0;
     char sysdev[256];
     if (find_device(&fb_base, &fb_len, &mmio_base, &mmio_len,
                     sysdev, sizeof sysdev) < 0)
         return 1;
-    if (!fb_len) fb_len = 6 * 1024 * 1024;
+    if (!fb_len) {
+        fprintf(stderr, "cannot determine framebuffer BAR size; aborting\n");
+        return 1;
+    }
+    if ((uint64_t)xres * (uint64_t)yres * 2u > fb_len) {
+        fprintf(stderr,
+                "geometry %dx%d at 16 bpp requires %llu bytes, "
+                "but the mapped framebuffer is %llu bytes; aborting\n",
+                xres, yres, (unsigned long long)((uint64_t)xres *
+                (uint64_t)yres * 2u), (unsigned long long)fb_len);
+        return 1;
+    }
+    if (((flag_fill || flag_rop) && (xres < 640 || yres < 480)) ||
+        (flag_rop && (xres <= 325 || yres <= 245)) ||
+        (flag_blit && (xres < 800 || yres < 800))) {
+        fprintf(stderr, "geometry %dx%d is too small for the selected test(s)\n",
+                xres, yres);
+        return 2;
+    }
 
     volatile uint8_t *fb = NULL;
     if (mmap_resources(sysdev, &fb, fb_len) < 0)
@@ -322,14 +360,15 @@ int main(int argc, char **argv)
     }
 
     printf("Wait for engine idle before testing...\n");
-    if (wait_idle(1000) < 0) {
-        fprintf(stderr, "engine busy at start; aborting (no writes performed)\n");
+    wait_idle_or_die(1000, "initial engine wait");
+    if (!flag_fill && !flag_blit && !flag_rop) {
+        printf("Engine present and idle; no test was run\n");
         munmap((void *)fb, fb_len);
         munmap((void *)mmio, MMIO_SIZE);
-        return 1;
+        return 0;
     }
     accel_init(xres, bpp);
-    wait_idle(100);
+    wait_idle_or_die(100, "accel init");
 
     int failures = 0;
     volatile unsigned short *fb16 = (volatile unsigned short *)fb;
@@ -337,7 +376,6 @@ int main(int argc, char **argv)
     if (flag_fill || flag_rop) {
         long long t0 = now_us();
         hw_fill(0, 0, 640, 480, 0xF81F, bpp, xres, 0);
-        wait_idle(500);
         long long t1 = now_us();
         printf("hw_fill 640x480: %lld us\n", t1 - t0);
 
@@ -348,7 +386,6 @@ int main(int argc, char **argv)
 
         if (flag_rop) {
             hw_fill(320, 240, 10, 10, 0xFFFF, bpp, xres, 1); /* XOR white */
-            wait_idle(500);
             got = fb16[(245 * xres) + 325];
             printf("verify xor pixel(325,245): got=0x%04x "
                    "(0xF81F ^ 0xFFFF = 0x07E0)\n", got);
@@ -360,7 +397,6 @@ int main(int argc, char **argv)
         sw_fill(fb, 0, 0, 800, 600, bpp, xres, 0xF800); /* red area */
         long long t0 = now_us();
         hw_copy(0, 0, 0, 200, 800, 600, bpp, xres * (bpp / 8));
-        wait_idle(500);
         long long t1 = now_us();
         printf("hw_copy 800x600 (0,0)->(0,200): %lld us\n", t1 - t0);
 
@@ -371,7 +407,7 @@ int main(int argc, char **argv)
     }
 
     printf("Wait idle + re-init engine to a clean state...\n");
-    wait_idle(1000);
+    wait_idle_or_die(1000, "final engine wait");
     accel_init(xres, bpp);
 
     munmap((void *)fb, fb_len);

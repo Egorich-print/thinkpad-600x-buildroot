@@ -12,9 +12,11 @@ export LANG=C.UTF-8
 export LC_ALL=C.UTF-8
 cd /root 2>/dev/null || cd / || true
 
-# Only start X if no session is already running (DISPLAY unset).
+# Only start X if no session is already running (DISPLAY unset).  No client
+# argument: startx then runs /root/.xinitrc, which starts dtwm (the window
+# manager *and* the CDE Front Panel) and then execs Xsession.
 if [ -z "$DISPLAY" ]; then
-    /usr/bin/startx /usr/dt/bin/Xsession
+    /usr/bin/startx
 fi
 
 # CDE has exited: give the user a root shell on the console.

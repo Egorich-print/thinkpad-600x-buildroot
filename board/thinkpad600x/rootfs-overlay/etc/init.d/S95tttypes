@@ -18,13 +18,24 @@ D=/usr/dt/appconfig/tttypes
 
 mkdir -p /etc/tt
 cd /etc/tt || exit 0
-rm -f types.xdr .tt_lock
+
+# Compile into a scratch directory and publish the result only if it is
+# non-empty: ttsession must never load a half-written type database.
+TMPD="$(mktemp -d /etc/tt/.types.XXXXXX)" || exit 0
+failed=""
 for f in "$D"/*.ptype; do
     [ -f "$f" ] || continue
-    TTPATH=. "$TTC" -sd user -m "$f" >/dev/null 2>&1 || true
+    TTPATH="$TMPD" "$TTC" -sd user -m "$f" >/dev/null 2>&1 || failed="$failed $(basename "$f")"
 done
 
-if [ -s types.xdr ]; then
-    echo "ToolTalk types compiled ($(wc -c < types.xdr) bytes)"
+if [ -n "$failed" ]; then
+    echo "ToolTalk: tt_type_comp failed for:$failed" >&2
 fi
+if [ -s "$TMPD/types.xdr" ]; then
+    mv -f "$TMPD/types.xdr" /etc/tt/types.xdr
+    echo "ToolTalk types compiled ($(wc -c < /etc/tt/types.xdr) bytes)"
+else
+    echo "ToolTalk: no types.xdr produced - ttsession will likely fail" >&2
+fi
+rm -rf "$TMPD"
 exit 0

@@ -1,6 +1,10 @@
 #!/bin/sh
 set -e
-TARGET_DIR="$1"
+TARGET_DIR="${1:-}"
+if [ -z "$TARGET_DIR" ] || [ ! -d "$TARGET_DIR" ]; then
+    echo "post-build.sh: usage: $0 <target-dir>" >&2
+    exit 1
+fi
 
 # Root profile
 [ -d "$TARGET_DIR/root" ] || mkdir -p "$TARGET_DIR/root"
@@ -18,19 +22,22 @@ rm -f "$TARGET_DIR/etc/init.d/S40xorg"
 # via mksh (Buildroot installs mksh at /bin/mksh).
 ln -sf /bin/mksh "$TARGET_DIR/usr/bin/ksh"
 
-# Root .xinitrc -> launch CDE (startx runs this).
+# Root .xinitrc -> CDE session (this is what "startx" runs).
 mkdir -p "$TARGET_DIR/root" "$TARGET_DIR/etc/skel"
 cat > "$TARGET_DIR/root/.xinitrc" <<'EOF'
 # CDE desktop.
 #
-# dtwm provides the window manager *and* the CDE Front Panel (WmFP).  In this
-# reduced build dtsession never manages to spawn it, so start dtwm here and
-# then run Xsession, which sets up the DT search paths / fonts and starts
-# ttsession + dtsession.
+# dtwm provides the window manager *and* the CDE Front Panel (WmFP).  CDE's
+# Xsession starts ttsession and dtsession but never dtwm itself (dtsession
+# would normally do that through dtsmcmd, which this reduced build omits), so
+# start dtwm here and then run Xsession, which sets up the DT search paths and
+# fonts around it.
 /usr/dt/bin/dtwm &
 exec /usr/dt/bin/Xsession
 EOF
+chmod 755 "$TARGET_DIR/root/.xinitrc"
 cp "$TARGET_DIR/root/.xinitrc" "$TARGET_DIR/etc/skel/.xinitrc"
+chmod 755 "$TARGET_DIR/etc/skel/.xinitrc"
 
 # Default UTF-8 locale (glibc's built-in C.UTF-8) so btop/others detect UTF-8.
 # Guard against duplicate appends on incremental rebuilds.

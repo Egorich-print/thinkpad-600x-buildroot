@@ -12,12 +12,13 @@ set -euo pipefail
 PROJECT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 RELEASE_DIR="$PROJECT_DIR/release"
 INITRAMFS_SRC="$PROJECT_DIR/board/thinkpad600x/initramfs"
-STAGING="/tmp/thinkpad-live-staging"
-INITRD_STAGE="/tmp/thinkpad-initrd"
-ISO_OUT="/tmp/thinkpad600x-live.iso"
+ISO_OUT="${ISO_OUT:-/tmp/thinkpad600x-live.iso}"
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/thinkpad600x-live.XXXXXX")"
+trap 'rm -rf "$WORK"' EXIT
+STAGING="$WORK/staging"
+INITRD_STAGE="$WORK/initrd"
 
 echo "=== Building ThinkPad 600X live ISO (hybrid CD/USB) ==="
-rm -rf "$STAGING" "$INITRD_STAGE" "$ISO_OUT"
 mkdir -p "$STAGING/boot/isolinux"
 
 # 1. Unpack the target rootfs — this becomes the read-only live root.
@@ -60,9 +61,21 @@ if [[ ! -f "$ISOLINUX_BIN" ]]; then
   fi
 fi
 
-[[ -f "$ISOLINUX_BIN" ]] && cp "$ISOLINUX_BIN" "$STAGING/boot/isolinux/"
-[[ -f "$LDLINUX" ]]      && cp "$LDLINUX"      "$STAGING/boot/isolinux/"
-[[ -f "$ISOHDPFX" ]]     || ISOHDPFX=""
+# Boot-critical assets.  A build that silently misses these still "succeeds",
+# but yields a CD-only image, or a HDD install whose extlinux cannot read its
+# own config.  Fail the build instead.
+for f in "$ISOLINUX_BIN" "$LDLINUX"; do
+  if [[ ! -f "$f" ]]; then
+    echo "ERROR: missing boot-critical file: $f" >&2
+    exit 1
+  fi
+done
+if [[ -z "$ISOHDPFX" ]] || [[ ! -f "$ISOHDPFX" ]]; then
+  echo "ERROR: isohdpfx.bin not found - the ISO would not boot from a USB disk" >&2
+  exit 1
+fi
+cp "$ISOLINUX_BIN" "$STAGING/boot/isolinux/"
+cp "$LDLINUX"      "$STAGING/boot/isolinux/"
 
 # 5. isolinux config. No root= is needed: the initramfs finds the media.
 #    Plain digit menu (no menu.c32 — the 1999 BIOS hangs on the UI module).
@@ -98,34 +111,58 @@ mkdir -p "$STAGING/sbin"
 cat > "$STAGING/sbin/install-live.sh" <<'EOS'
 #!/bin/sh
 # ThinkPad 600X live installer: copy the live system onto the internal PATA disk.
-set -e
+#
+# switch_root execs this, so it runs as PID 1: exiting on failure would panic the
+# kernel.  There is deliberately no "set -e" (its behaviour around the conditionals
+# below is easy to misread), so every critical step is checked explicitly and a
+# failure drops back to a shell on the live system.
+
+die() { echo; echo "ERROR: $*"; echo "Dropping to a shell on the live system."; exec /bin/sh; }
+
+cmdline_has() {
+    for t in $(cat /proc/cmdline 2>/dev/null); do
+        [ "$t" = "$1" ] && return 0
+    done
+    return 1
+}
+
 echo "=== ThinkPad 600X Live Installer ==="
 echo
 echo "Available disks:"
 cat /proc/partitions
 echo
-echo "Target: /dev/sda (the internal PATA disk). ALL DATA ON IT WILL BE ERASED."
-if grep -q 'live.install.auto=1' /proc/cmdline; then
-  echo "Unattended mode (live.install.auto=1): proceeding."
-else
-  printf "Type YES to continue: "
-  read confirm
-  [ "$confirm" = "YES" ] || { echo "Aborted."; exit 1; }
-fi
 
-# Locate the live media (same scan the initramfs uses).
+# Find the live media before touching anything: it must never be the target.
 CD=""
-for dev in /dev/sr0 /dev/sr1 /dev/sda /dev/sdb /dev/sdc /dev/sdd \
-           /dev/sda1 /dev/sdb1 /dev/sdc1 /dev/sdd1; do
+for dev in /dev/sr0 /dev/sr1 /dev/sr2 \
+           /dev/sda /dev/sdb /dev/sdc /dev/sdd /dev/sde /dev/sdf \
+           /dev/sda1 /dev/sdb1 /dev/sdc1 /dev/sdd1 /dev/sde1 /dev/sdf1; do
   [ -b "$dev" ] || continue
   mkdir -p /mnt/src
   if mount -t iso9660 -o ro "$dev" /mnt/src 2>/dev/null; then
-    [ -e /mnt/src/boot/bzImage ] && { CD="$dev"; break; }
+    if [ -e /mnt/src/sbin/install-live.sh ] && [ -e /mnt/src/boot/bzImage ]; then
+      CD="$dev"
+      break
+    fi
     umount /mnt/src 2>/dev/null || true
   fi
 done
-[ -n "$CD" ] || { echo "ERROR: live media not found"; exit 1; }
+[ -n "$CD" ] || die "live media not found"
 echo "Live media: $CD"
+
+[ -b /dev/sda ] || die "/dev/sda is not present (USB-booted without the internal disk?)"
+case "$CD" in
+    /dev/sda|/dev/sda[0-9]*) die "refusing to install: the live media is on $CD" ;;
+esac
+
+echo "Target: /dev/sda (the internal PATA disk). ALL DATA ON IT WILL BE ERASED."
+if cmdline_has live.install.auto=1; then
+  echo "Unattended mode (live.install.auto=1): proceeding."
+else
+  printf "Type YES to continue: "
+  read confirm || die "aborted"
+  [ "$confirm" = "YES" ] || die "aborted by user"
+fi
 
 umount /dev/sda[0-9]* 2>/dev/null || true
 
@@ -141,19 +178,20 @@ blockdev --rereadpt /dev/sda 2>/dev/null || partx -a /dev/sda 2>/dev/null || tru
 i=0
 while [ ! -b /dev/sda1 ] && [ "$i" -lt 15 ]; do sleep 1; i=$((i+1)); done
 TARGET_PART=/dev/sda1
-[ -b "$TARGET_PART" ] || { echo "ERROR: /dev/sda1 did not appear"; exit 1; }
+[ -b "$TARGET_PART" ] || die "/dev/sda1 did not appear after partitioning"
 
 echo "Creating ext4 on $TARGET_PART ..."
 # syslinux/extlinux 6.03 cannot read directories on a filesystem with
 # metadata_csum/orphan_file (and 64bit is pointless on a 40 GB disk), so create
 # the root filesystem without those features.
-mkfs.ext4 -F -O ^metadata_csum,^orphan_file,^64bit "$TARGET_PART"
+mkfs.ext4 -F -L THINKPAD600X_LIV -O ^metadata_csum,^orphan_file,^64bit "$TARGET_PART" \
+  || die "mkfs.ext4 failed"
 
 mkdir -p /mnt/target
-mount "$TARGET_PART" /mnt/target
+mount "$TARGET_PART" /mnt/target || die "cannot mount $TARGET_PART"
 
 echo "Copying live files onto $TARGET_PART (~200 MB)..."
-cp -a /mnt/src/. /mnt/target/
+cp -a /mnt/src/. /mnt/target/ || die "copying the live tree failed"
 
 # Bootloader config for the installed system: boot from the ext4 root.
 cat > /mnt/target/boot/extlinux.conf <<'CFG'
@@ -184,28 +222,30 @@ for c32 in /mnt/src/boot/isolinux/*.c32; do
 done
 
 # Install the extlinux bootloader into the partition's VBR (creates ldlinux.sys).
-if command -v extlinux >/dev/null 2>&1; then
-  echo "Installing extlinux..."
-  extlinux --install /mnt/target/boot
-else
-  echo "WARNING: extlinux not found; HDD may not be bootable"
-fi
+# Missing or failing here means an unbootable disk, so it is fatal, not a warning.
+command -v extlinux >/dev/null 2>&1 || die "extlinux is missing from the image"
+echo "Installing extlinux..."
+extlinux --install /mnt/target/boot || die "extlinux --install failed"
+[ -f /mnt/target/boot/ldlinux.sys ] || die "ldlinux.sys was not created"
+[ -f /mnt/target/boot/ldlinux.c32 ] || die "ldlinux.c32 is missing from /boot"
 
 # Write the syslinux MBR code to sector 0 (first 440 bytes only, so the
 # partition table stays intact).
+MBR_OK=0
 for mbr in /usr/share/syslinux/mbr.bin /usr/lib/syslinux/mbr/mbr.bin; do
   if [ -f "$mbr" ]; then
-    dd if="$mbr" of=/dev/sda bs=440 count=1 conv=notrunc 2>/dev/null && break
+    dd if="$mbr" of=/dev/sda bs=440 count=1 conv=notrunc 2>/dev/null && MBR_OK=1 && break
   fi
 done
+[ "$MBR_OK" = 1 ] || die "mbr.bin not found - the installed disk would not boot"
 
 sync
-umount /mnt/target
+umount /mnt/target || die "cannot unmount $TARGET_PART"
 umount /mnt/src 2>/dev/null || true
 echo
 echo "Installation complete."
 echo "Remove the CD/USB and the system will reboot into the installed HDD."
-echo "Login: root / thinkpad600x"
+echo "Login: root (no password)"
 echo
 sync
 # This script runs as PID 1; exiting would panic. Reboot instead.
@@ -235,6 +275,11 @@ $XORRISO -o "$ISO_OUT" \
 
 echo
 ls -lh "$ISO_OUT"
-echo "Done: $ISO_OUT"
+if command -v sha256sum >/dev/null 2>&1; then
+  ( cd "$(dirname "$ISO_OUT")" && sha256sum "$(basename "$ISO_OUT")" ) > "$ISO_OUT.sha256"
+else
+  shasum -a 256 "$ISO_OUT" > "$ISO_OUT.sha256"
+fi
+echo "Done: $ISO_OUT  (checksum: $ISO_OUT.sha256)"
 echo "USB:  diskutil unmountDisk /dev/diskN && sudo dd if=$ISO_OUT of=/dev/rdiskN bs=1m"
 echo "CD:   hdiutil burn \"$ISO_OUT\" -speed 4"

@@ -1,35 +1,39 @@
 #!/bin/bash
 # QEMU smoke test for the ThinkPad 600X image.
 # Boots the kernel+rootfs, waits for dropbear, and runs diagnostics over SSH.
-set -u
+set -euo pipefail
 
-IMGDIR="$(cd "$(dirname "$0")/../images" && pwd)"
+IMGDIR="${IMGDIR:-$(cd "$(dirname "$0")/../release" && pwd)}"
 BZIMAGE="${BZIMAGE:-$IMGDIR/bzImage}"
 ROOTFS="${ROOTFS:-$IMGDIR/rootfs.ext2}"
 SSHPORT="${SSHPORT:-2222}"
-SSHPASS_BIN="$(command -v sshpass)"
+SSHPASS_BIN="$(command -v sshpass || true)"
 MEMSIZE="${MEMSIZE:-64}"
-SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3"
+SSH_OPTS="-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=3 -o LogLevel=ERROR"
 
+# The image is a release artifact: never let a smoke test modify it.
 LOG="$IMGDIR/qemu-smoke.log"
+
+for f in "$BZIMAGE" "$ROOTFS"; do
+  [ -f "$f" ] || { echo "[qemu] missing $f (build first, or set BZIMAGE/ROOTFS)"; exit 1; }
+done
 
 qemu-system-i386 -m "${MEMSIZE}M" -cpu pentium3 -M pc \
   -kernel "$BZIMAGE" -append "root=/dev/sda rw console=ttyS0 panic=-1" \
-  -drive file="$ROOTFS",format=raw,if=ide \
+  -drive file="$ROOTFS",format=raw,if=ide,snapshot=on \
   -netdev user,id=n0,hostfwd=tcp::${SSHPORT}-:22 \
   -device e1000,netdev=n0 \
   -nographic -no-reboot > "$LOG" 2>&1 &
 QPID=$!
 trap 'kill "$QPID" 2>/dev/null' EXIT
 
-echo "[qemu] booting (pid $QPID), waiting for sshd…"
+echo "[qemu] booting (pid $QPID), waiting for dropbear…"
 up=0
-for i in $(seq 1 60); do
-  if [ -n "$SSHPASS_BIN" ]; then
-    "$SSHPASS_BIN" -p thinkpad600x ssh $SSH_OPTS -p "$SSHPORT" root@127.0.0.1 'echo OK' 2>/dev/null | grep -q OK && { up=1; break; }
-  else
-    ssh $SSH_OPTS -p "$SSHPORT" root@127.0.0.1 'echo OK' 2>/dev/null | grep -q OK && { up=1; break; }
-  fi
+i=0
+while [ "$i" -lt 60 ]; do
+  # root has an empty password, so probe the port instead of authenticating.
+  if (exec 3<>"/dev/tcp/127.0.0.1/$SSHPORT") 2>/dev/null; then up=1; break; fi
+  i=$((i + 1))
   sleep 2
 done
 
@@ -39,7 +43,12 @@ fi
 echo "[qemu] sshd up after ~$((i*2))s"
 
 run() {
-  "$SSHPASS_BIN" -p thinkpad600x ssh $SSH_OPTS -p "$SSHPORT" root@127.0.0.1 "$@"
+  if [ -z "$SSHPASS_BIN" ]; then
+    echo "  (sshpass not installed - skipping: $*)"
+    return 0
+  fi
+  "$SSHPASS_BIN" -p '' ssh $SSH_OPTS -o PreferredAuthentications=password \
+    -p "$SSHPORT" root@127.0.0.1 "$@"
 }
 
 echo "=== uname ==="; run "uname -a"
@@ -48,6 +57,6 @@ echo "=== mem free ==="; run "free -m"
 echo "=== hostname ==="; run "hostname"
 echo "=== net ==="; run "ip -o addr show eth0"
 echo "=== storage ==="; run "df -h /"
-echo "=== wifi/bt modules present? ==="; run "find /lib/modules -name 'rt2800usb*' -o -name 'btusb*' -o -name 'thinkpad_acpi*' | sort"
+echo "=== optional drivers present? ==="; run "find /lib/modules -name 'mt7601u*' -o -name 'rt2800usb*' -o -name 'thinkpad_acpi*' -o -name 'snd-cs46xx*' | sort"
 echo "=== process count ==="; run "ps | wc -l"
 echo "[qemu] DONE"
