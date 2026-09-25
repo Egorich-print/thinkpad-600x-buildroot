@@ -7,9 +7,9 @@ PATA-диск 600X.
 
 | Артефакт | Размер | Назначение |
 |----------|-------:|-----------|
-| `/tmp/thinkpad600x-live.iso` | ~210 MB | гибридный live CD/USB (El Torito + isohybrid MBR) |
+| `/tmp/thinkpad600x-live.iso` | ~270 MiB + bootloader/initrd overhead | гибридный live CD/USB (El Torito + isohybrid MBR) |
 | `release/bzImage` | ~3.8 MB | ядро Linux 6.12.104 LTS (i686 pentium3) |
-| `release/rootfs.tar` | ~212 MB | корневое дерево (CDE + X11 + приложения) |
+| `release/rootfs.tar` | ~270 MB | корневое дерево (CDE + X11 + приложения) |
 | `release/rootfs.ext2` | 512 MB | ext4-образ корня (для host-side записи) |
 
 SHA256 — в `release/SHA256SUMS.txt`.
@@ -28,7 +28,7 @@ isolinux берётся с хоста или из lima VM `br2`).
 
 ## Запись носителя
 
-### USB-флешка (основной путь для 600X)
+### USB-флешка (загрузка live-образа)
 
 600X не умеет грузиться с USB штатным BIOS — нужен **Plop Boot Manager**
 (`plpbt.iso`/`plpbt.img`, ~544 KB). Порядок:
@@ -53,7 +53,7 @@ hdiutil burn /path/to/plpbt.iso -speed 4
 hdiutil burn /tmp/thinkpad600x-live.iso -speed 4
 ```
 
-CD-RW на убитом приводе 600X даёт `MEDIUM ERROR`; предпочтителен CD-R @ 4x.
+Если CD-RW на приводе 600X даёт `MEDIUM ERROR`, предпочтителен CD-R @ 4x.
 
 ## Загрузка live-системы
 
@@ -61,43 +61,55 @@ CD-RW на убитом приводе 600X даёт `MEDIUM ERROR`; предп�
 
 | Клавиша | Режим |
 |---------|-------|
-| `1` | Live CDE (`acpi=off`, `clocksource=jiffies`) |
+| `1` | Live CDE (`acpi=off`, `clocksource=jiffies`, `tsc=unstable`) |
 | `2` | Live Safe (+ `noapic nolapic nomodeset`) |
-| `3` | **Install to internal HDD** (`/dev/sda`) |
+| `3` | **Install to internal HDD** (`/dev/sda`, `live.install=1`) |
 
-Логин live-системы: `root` **без пароля** (пустой пароль — Enter). CDE:
-`startx /usr/dt/bin/Xsession`.
+Порядок `console=` в live- и установленном cmdline — `console=ttyS0,115200 console=tty0`:
+последний `console=` становится `/dev/console`, поэтому приглашение установщика
+выводится и считывается на VGA-консоли.
+
+`tty1` автоматически запускает CDE через `/usr/sbin/autostart-cde`. На `ttyS0`
+работает getty; вход выполняется как `root` с пустым паролем (просто Enter).
 
 ## Установка на HDD (пункт 3)
 
-Скрипт `/sbin/install-live.sh`:
+Поддерживаемый путь установки — пункт `3` live-образа, который добавляет
+`live.install=1`. Скрипт `/sbin/install-live.sh`:
 
-1. показывает `/proc/partitions` и спрашивает подтверждение (`YES`);
+1. показывает `/proc/partitions` и выводит `Type YES to continue:`; для ручной
+   установки нужно ввести ровно `YES`;
 2. `sfdisk` создаёт MBR + один загрузочный раздел на `/dev/sda`;
 3. `mkfs.ext4 -O ^metadata_csum,^orphan_file,^64bit` (extlinux 6.03 не читает
    каталоги с `metadata_csum`/`orphan_file`);
-4. копирует live-дерево, пишет `/boot/extlinux.conf` + `syslinux.cfg`;
-5. `extlinux --install /boot` (VBR) и `mbr.bin` в сектор 0;
-6. перезагружается.
+4. копирует live-дерево и пишет `/boot/extlinux.conf` + `/boot/syslinux.cfg`;
+5. запускает `extlinux --install /mnt/target/boot` и записывает syslinux MBR (первые 440 байт
+   сектора 0), не затирая таблицу разделов;
+6. перезагружается (`reboot -f`).
 
-Автономный режим для тестов: добавить `live.install.auto=1` в параметры ядра.
+Для unattended-варианта к параметрам ядра добавляется
+`live.install.auto=1`; тогда подтверждение `YES` не запрашивается.
 
 ## Первая загрузка с HDD
 
-1. Логин `root` — **без пароля** (просто Enter).
-2. Сеть: `udhcpc -i eth0` (или статически).
-3. CDE: `startx /usr/dt/bin/Xsession`.
-4. Wi-Fi (TL-WN727N): `modprobe mt7601u`, затем `wpa_supplicant`/`iw`.
+1. CDE автоматически запускается на `tty1`; на `ttyS0` доступен getty.
+2. Вход `root` — **без пароля** (просто Enter).
+3. Сеть: `udhcpc -i eth0` (или статически).
+4. Wi-Fi (TL-WN727N, MediaTek MT7601U, `148f:7601`): `modprobe mt7601u`, затем
+   `wpa_supplicant`/`iw`.
 5. Звук (CS46xx): прошивка в `/lib/firmware/cs46xx/` (см. ниже); проверка —
-   `aplay -l` / `speaker-test`.
+   `aplay -l` / `speaker-test`. Вывод звука на реальном 600X пока не подтверждён.
 6. Выключение: `poweroff` / перезагрузка: `reboot`.
 
 ## Пересборка компонентов
 
 ### Прошивка звука CS46xx (несвободная, не в репозитории)
 
-`scripts/fetch-cs46xx-firmware.sh` скачивает `alsa-firmware` и кладёт
-`cs46xx/{ba1,cwc4630,cwcasync,cwcbinhack,cwcdma,cwcsnoop}` в overlay:
+`scripts/fetch-cs46xx-firmware.sh` нужно запустить один раз перед сборкой: скрипт
+скачивает `alsa-firmware` и кладёт
+`cs46xx/{ba1,cwc4630,cwcasync,cwcbinhack,cwcdma,cwcsnoop}` в overlay.
+Без этого прошивка в итоговом образе отсутствует; вывод звука на реальном 600X
+остаётся непроверенным.
 ```sh
 ./scripts/fetch-cs46xx-firmware.sh
 ```
@@ -105,10 +117,10 @@ CD-RW на убитом приводе 600X даёт `MEDIUM ERROR`; предп�
 ### Ядро + rootfs (lima VM)
 
 ```sh
-limactl shell br2 -- bash -c "cd ~/buildroot && \
-  make O=~/br2-out BR2_EXTERNAL=/Users/<you>/.../thinkpad-600x-buildroot thinkpad600x_defconfig && \
-  make O=~/br2-out BR2_EXTERNAL=/Users/<you>/.../thinkpad-600x-buildroot -j10"
-# скопировать images/{bzImage,rootfs.tar,rootfs.ext2} в release/
+limactl shell br2 -- bash -c 'cd ~/buildroot && \
+  make O=~/br2-out BR2_EXTERNAL="$HOME/thinkpad-600x-buildroot" thinkpad600x_defconfig && \
+  make O=~/br2-out BR2_EXTERNAL="$HOME/thinkpad-600x-buildroot" -j10'
+# скопировать bzImage, rootfs.tar и rootfs.ext2 из выходного каталога Buildroot в release/
 ```
 
 ### i686 `extlinux` (если нужно пересобрать overlay-бинарь)
@@ -133,7 +145,7 @@ file bios/extlinux/extlinux   # должен быть ELF 32-bit i386
 # скопировать в board/thinkpad600x/rootfs-overlay/usr/sbin/extlinux
 ```
 
-`mbr.bin` копируется из `~/br2-out/images/syslinux/mbr.bin` в
+`mbr.bin` берётся из собранного syslinux и копируется в
 `board/thinkpad600x/rootfs-overlay/usr/share/syslinux/`.
 
 ## Диагностика
@@ -145,4 +157,4 @@ file bios/extlinux/extlinux   # должен быть ELF 32-bit i386
 | `No configuration file found` (extlinux) | ext4 с `metadata_csum`/`orphan_file` — пересоздать ФС |
 | `SYSLINUX ... boot:` без ядра | нет `ldlinux.c32`/`extlinux.conf` в `/boot` |
 | USB не виден при загрузке | включить `USB_STORAGE=y` (уже включено) |
-| Зависание на BogoMIPS | `NO_HZ_IDLE=n`, `clocksource=jiffies` |
+| Зависание на BogoMIPS | `CONFIG_NO_HZ_IDLE` не задан, `clocksource=jiffies` |

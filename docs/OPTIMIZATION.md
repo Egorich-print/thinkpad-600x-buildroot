@@ -13,7 +13,7 @@
 | Ядро | `CONFIG_CC_OPTIMIZE_FOR_SIZE` | ядро `-Os` — меньше резидентного ядра (критично для 64 MB) |
 | Ядро | `CONFIG_MPENTIUMIII`, `SMP off` | точный CPU, без лишних спинов блокировок |
 | Ядро | `CONFIG_PREEMPT_DYNAMIC` | runtime `voluntary` — throughput + отзывчивость |
-| Ядро | `EXT4_USE_FOR_EXT2` | один FS-драйвер на ext2/3/4 |
+| Ядро | `CONFIG_EXT4_USE_FOR_EXT2` | один FS-драйвер на ext2/3/4 |
 | Сборка | `BR2_CCACHE=y` | ускорение итераций |
 
 ## Ключевой факт про SSE2
@@ -35,14 +35,16 @@ coreutils, pixman, imlib2, mpg123). На Pentium III `cpuid` не реклами
 | `-ffunction-sections -fdata-sections` + `--gc-sections` | не применено | риск для лоадер-модулей Xorg (`libvgahw.so` и т.п. — weak-символы) |
 | PGO (`-fprofile-use`) | не применено | нет представительной тренировочной нагрузки; каркас в BENCHMARKS.md |
 | `-funsafe-math-optimizations` | отклонён | небезопасная численная семантика |
-| PIE глобально | не применено | оверхед на 32-бит относительно выгоды (сейчас PIE где Buildroot дефолт позволяет) |
-| `-mfpmath=sse` | не применено явно | `-march=pentium3` уже разрешает SSE для float через x87-совместимый путь; риск ABI |
+| PIE глобально | не отключён | Buildroot generated config uses `BR2_PIC_PIE=y`; это toolchain default, не отдельная оптимизация |
+| `-mfpmath=sse` | не применяется явно | `-march=pentium3` включает SSE в ISA, но сам по себе не выбирает SSE math ABI; менять `-mfpmath` не нужно |
 
 ## Package-specific (документировано)
 
 - Ядро: `-Os` (+ MPENTIUMIII).
 - glibc/toolchain: `-O2` (управляется Buildroot, не LTO).
-- CDE/OpenMotif: `-O2` (нужны `-include string.h` + `-Wno-error=*` для gcc 14).
+- CDE/OpenMotif: `-O2`; CDE добавляет `-Wno-error=*` для gcc 14, а OpenMotif
+  добавляет `-include string.h`, `-include stdlib.h` и `-include stdio.h` для
+  cross-build.
 - mpg123/mupdf (численные): могли бы `-O3`, оставлены `-O2` (общий профиль).
 
 ## Итог

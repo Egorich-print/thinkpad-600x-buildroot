@@ -6,10 +6,9 @@
 ## Context
 
 The 600X has a Crystal/Cirrus CS 4614/22/24/30 "SoundFusion" audio controller
-driven by `snd-cs46xx`, which is built with `CONFIG_SND_CS46XX_NEW_DSP=y` and
-needs external DSP firmware (`cs46xx/cwc4630`, `cwcasync`, `cwcsnoop`,
-`cwcbinhack`, `cwcdma`).  That firmware was removed from linux-firmware
-(unknown/non-free licence).
+driven by `CONFIG_SND_CS46XX=m`, which needs external DSP firmware
+(`cs46xx/ba1`, `cwc4630`, `cwcasync`, `cwcbinhack`, `cwcdma`, and `cwcsnoop`).
+That firmware was removed from linux-firmware (unknown/non-free licence).
 
 ## Decision
 
@@ -18,9 +17,11 @@ needs external DSP firmware (`cs46xx/cwc4630`, `cwcasync`, `cwcsnoop`,
   (`/lib/firmware/cs46xx/`).
 - Keep the blobs **out of git** (`.gitignore`), since they are non-free.
 - `snd-cs46xx` is auto-loaded from `/etc/modules`; `alsa-utils`
-  (`aplay`/`amixer`/`speaker-test`) is included for testing.
+  (`aplay`, `amixer`, `alsactl`, and `speaker-test`) is included for testing.
 
 ## Consequences
 
-Sound works on the real hardware; a fresh clone must run the fetch script before
-building (otherwise audio firmware is simply absent, boot is unaffected).
+The firmware, module, and test utilities are present in the built image, but the
+repository contains no `aplay` or `speaker-test` evidence from the physical
+600X; audio validation is still pending.  A fresh clone must run the fetch
+script before building (otherwise the firmware is absent; boot is unaffected).

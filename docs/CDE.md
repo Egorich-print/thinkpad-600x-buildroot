@@ -5,25 +5,25 @@ custom Buildroot package (`package/cde/`), installed under `/usr/dt`.
 
 ## Build method
 
-- **Source**: `cde-2.5.3.tar.gz` (vendored into `$BR2_DL_DIR`; SourceForge release
-  path is unstable so the tarball is carried locally).
+- **Source**: `cde-2.5.3.tar.gz` from the configured SourceForge URL; it may be
+  pre-populated in `$BR2_DL_DIR` (the repository does not contain the tarball).
 - **Autotools, not imake.** Flow: `autoreconf` → `./configure` → `make`.
 - `./configure --prefix=/usr/dt --disable-docs`.
 - OpenMotif 2.3.8 provides `libXm`/`libMrm`/`libUil` (headers in staging via
   `OPENMOTIF_INSTALL_STAGING`).
 - **libtirpc** supplies SunRPC after glibc removed it; CDE's configure detects it
-  and adds `-DOPT_TIRPC -ltirpc` automatically. The hard-coded `-I/usr/include/tirpc`
-  is harmless in cross-compile (the real headers are found via the sysroot).
-- LMDB (DtMmdb/dtinfo), libjpeg are needed.
+  and adds `-DOPT_TIRPC -ltirpc` automatically. `cde.mk` removes CDE's hard-coded
+  `-I/usr/include/tirpc`; the sysroot's tirpc headers are used.
+- LMDB and libjpeg are build dependencies.
 
-### Cross-compilation patches (`package/cde/*.patch`)
+### Cross-compilation source adjustments (`package/cde/cde.mk`)
 
-1. **`0001-tradcpp-host-build.patch`** — CDE's `tradcpp` preprocessor (GENCPP) must
-   *execute* at build time; it would otherwise be cross-compiled (i686) and fail to
-   run on the aarch64 host. The patch removes the target build rule and
-   `cde.mk`'s `CDE_BUILD_HOST_TRADCPP` compiles it natively with `$(HOSTCC)`.
-2. **`0002-drop-dtksh.patch`** — removes `dtksh` from `programs/SUBDIRS`, dropping
-   the tcl/ksh-TARGET-toolchain requirement and its size.
+1. `CDE_FIX_SOURCES` removes CDE's target `tradcpp` build rule. `tradcpp` (GENCPP)
+   must execute at build time, so `CDE_BUILD_HOST_TOOLS` builds it natively with
+   `$(HOSTCC)` instead of cross-compiling it for i686.
+2. `CDE_FIX_SOURCES` removes the programs this reduced image does not build,
+   including `dtksh` and the other optional CDE applications listed below. This
+   drops the Tcl/ksh target-toolchain requirement and reduces the image size.
 
 ### Build-time host tools (probed at configure, not shipped)
 
@@ -33,31 +33,54 @@ See `docs/BUILD.md`.
 
 ## Runtime model
 
-No `dtlogin`, no `rpcbind`, no `rpc.ttdbserver` — a local session does not need
-them. Startup is console login → `startx /usr/dt/bin/Xsession`:
+`tty1` runs `/usr/sbin/autostart-cde`, which calls `startx` without a client.
+`/root/.xinitrc` (created by `post-build.sh`) starts `/usr/dt/bin/dtwm &` and then
+execs `/usr/dt/bin/Xsession`. `dtwm` supplies both the window manager and the CDE
+Front Panel; CDE's `Xsession` does not start `dtwm` by itself.
 
-1. `Xsession` (a ksh-syntax script, run by target **mksh**).
-2. `dtsearchpath -ksh` exports `DTAPPSEARCHPATH`, `DTDATABASESEARCHPATH`,
-   `DTHELPSEARCHPATH`, `DTICONSEARCHPATH`.
-3. `ttsession -s` (ToolTalk, standalone).
-4. `dtdbcache -init`, `dtappgather`.
-5. `dtsession` → restores/starts **dtwm** + front panel + dtfile.
+`Xsession` is a ksh-syntax script run by target **mksh** and performs this sequence:
 
-Required env: `LANG=en_US.UTF-8`, `DT=true`, `PATH=/usr/dt/bin:$PATH`,
-`LD_LIBRARY_PATH=/usr/dt/lib`.
+1. `dtsearchpath -ksh` exports `DTAPPSEARCHPATH`, `DTDATABASESEARCHPATH`,
+   `DTHELPSEARCHPATH`, and `DTICONSEARCHPATH`.
+2. `dtappgather` starts the application database setup.
+3. `dtdbcache -init` and `ttsession -s` start the ToolTalk/runtime support.
+4. `dtsession` is the selected CDE session client. The normal `dtsmcmd` session
+   manager is not shipped, so the explicit `dtwm` start above is required.
+
+The autostart environment sets `HOME=/root`, `PATH=/usr/dt/bin:/usr/bin:/bin:/usr/sbin:/sbin`,
+`LANG=C.UTF-8`, and `LC_ALL=C.UTF-8`; `Xsession` exports `DT=true` for the session.
+
+The static ToolTalk type database is compiled on the target at boot by
+`/etc/init.d/S95tttypes`, not during the Buildroot build. The script runs
+`/usr/dt/bin/tt_type_comp` over `/usr/dt/appconfig/tttypes/*.ptype` in a scratch
+`/etc/tt/.types.*` directory and publishes `/etc/tt/types.xdr` only when the
+result is non-empty. The two `dtinfo` ptypes are absent because `dtinfo` is not
+built.
 
 ## Fonts
 
 CDE 2.5 uses core X fonts for its classic look (`xset fp+` misc/75dpi/100dpi/Xt
 paths) with Xft offered through Xft-enabled OpenMotif. Both `xfonts-*` core fonts
-and fontconfig/freetype are installed. `--enable-misc-fixed` selects the misc-fixed
-UI font.
+and fontconfig/freetype are installed. `--enable-misc-fixed` is not passed; CDE's
+configure default is `no`.
 
 ## What's deliberately excluded
 
-- `dtlogin`/`dtgreet` (graphical login greeter — replaces `getty`, not needed).
-- `dtksh` (tcl/ksh scripting shell) — size/toolchain cost.
-- `dtmail` (full IMAP/POP mail client) — only if a lightweight CDE mail client is
-  later required.
-- `dtcm` (calendar), `dtinfo` (SGML help browser) — optional; kept out of the
-  baseline profile.
+The shipped release contains the core desktop and session binaries
+`dtwm`, `dtsession`, `ttsession`, `dtstyle`, `dtlogin`, `dtterm`, `dtfile`,
+`dtaction`, `dtpad`, and `tt_type_comp`, plus the `Xsession` helpers
+`dtsearchpath`, `dtdbcache`, and `dtappgather`. `rpcbind` and `rpc.ttdbserver` are
+also present; `dtlogin` is installed but is not used by this image's console flow.
+
+The following binaries are not built/shipped: `dtsmcmd`, `dtappman`, `dtmail`,
+`dtcm`, `dtinfo`, `dthelp`, `dthelpview`, `dthelpgen`, `dtmosaic`, and `dtksh`.
+`dtmosaic` is absent; the checked-in `usr/dt/appconfig/types/C/ibm.dt` maps HTML
+`Open` actions to `/usr/bin/dillo` (and passes the file argument). Regenerate
+`release/rootfs.tar` after this overlay change so the shipped tar carries the same
+mapping. Consequently, the Applications, Calendar, Mail, and Help front-panel
+controls and their related actions do not launch working applications.
+
+`dtlp` is present in the release only as a script with a `dtksh` interpreter, while
+`dtksh` is not shipped, so the CDE print action that invokes `dtlp` is not functional.
+`dtprintinfo` is present in the release; the inventory does not support describing it
+as absent.

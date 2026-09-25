@@ -4,7 +4,7 @@
 
 | Artifact | Where | What it gives |
 |----------|-------|---------------|
-| `drivers/video/fbdev/neofb.c` | Linux (in-tree, incl. 6.18 LTS) | **Working accel code**: `neo2200_accel_init/fillrect/copyarea/imageblit/sync`; chip→VRAM/clock table; MMIO BAR mapping |
+| `drivers/video/fbdev/neofb.c` | Linux (historical `linux-6.18.7` source snapshot) | **Working accel code**: `neo2200_accel_init/fillrect/copyarea/imageblit/sync`; chip→VRAM/clock table; MMIO BAR mapping |
 | `include/video/neomagic.h` | Linux (in-tree) | `struct Neo2200` register layout + all `NEO_BC0/1/2/3`, `NEO_MODE1_*`, `NEO_BS0_*`, cursor regs, PCI IDs |
 | `xf86-video-neomagic` (`neo_reg.h`, `neo_2200.c`, `neo_2090.c`, `neomagic_accel.c`) | freedesktop xorg (`xf86-video-neomagic`); mirrors: github `freedesktop-unofficial-mirror/xorg__driver__xf86-video-neomagic`, `X11Libre/xf86-video-neomagic` | The **XAA acceleration backend** (historical); independent confirmation of the same registers |
 | `sound/pci/nm256/nm256.c` | Linux (in-tree) | Audio side (NM256ZX audio `0x8006`), not needed for BLT |
@@ -53,8 +53,9 @@
 
 ## Reproducibility / provenance record
 
-- Kernel commit scope: current 6.18 LTS tree (`linux-6.18.7` used here; 6.18 line is
-  Longterm through Dec 2028).
+- Kernel source provenance: the register map was recovered from a historical
+  `linux-6.18.7` source snapshot; that snapshot is not the current image kernel
+  (Linux 6.12.104).
 - Source of register map in this repo: `docs/NEOMAGIC_REGISTER_MAP.md` cites offsets and
   bit masks from `neomagic.h` + `neofb.c`.
 - Historical XAA structure: `xf86-video-neomagic` git history (freedesktop), MIT licensed.

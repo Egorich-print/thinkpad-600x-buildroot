@@ -1,37 +1,71 @@
 # Physical deployment — ThinkPad 600X
 
-The 600X boots from PATA IDE (not USB). The image is a raw `ext2` filesystem
-(`images/rootfs.ext2`). To write it to a physical PATA HDD:
+The supported physical deployment starts with the hybrid live CD/USB ISO built
+by `scripts/make-live-iso.sh`. `release/rootfs.ext2` is a filesystem image
+only: it has no partition table and no bootloader. Copying it directly to a
+disk with `cat` does not produce a bootable disk.
+
+Build the live ISO from the project root after the Buildroot images are in
+`release/`:
 
 ```sh
-# Raw copy (fastest — treat the HDD as /dev/sdX):
-cat images/rootfs.ext2 > /dev/sdX    # the ext2 IS the full disk
-# OR, if the disk needs a bootloader + partition table:
-# 1. Create MBR partition (type 83 Linux, start at 2048 sectors, size = image size + 4 MiB bootloader).
-# 2. Install syslinux MBR (syslinux /dev/sdX) and add syslinux.cfg pointing to /bzImage.
-# 3. Write rootfs.ext2 into the partition (/dev/sdX1).
+./scripts/make-live-iso.sh
 ```
 
-A reproducible bootable-disk image profile can be added via `BR2_IMAGE_BOOT_SCR`
-or `post-image.sh`. The project includes a scaffold `post-image.sh` that creates
-`/usr/dt` links and fixes permissions; it can be extended to run `syslinux`
-+ `cat rootfs.ext2 > /dev/sdX` for deployment automation.
+The script consumes `release/bzImage` and `release/rootfs.tar`. On macOS,
+write the resulting `/tmp/thinkpad600x-live.iso` to a USB stick:
 
-The `board/thinkpad600x/syslinux.cfg` (optional future) points to the kernel
-(`bzImage`) and appends `root=/dev/sda rw console=tty1`. The current profile
-uses direct kernel boot (`bzImage` + `rootfs.ext2`) for QEMU; the MBR/syslinux
-layer is optional but documented.
+```sh
+diskutil list
+diskutil unmountDisk /dev/diskN
+sudo dd if=/tmp/thinkpad600x-live.iso of=/dev/rdiskN bs=1m
+sudo sync
+```
+
+Or burn it to CD:
+
+```sh
+hdiutil burn /tmp/thinkpad600x-live.iso -speed 4
+```
+
+Replace `/dev/diskN` with the actual USB device. The 600X BIOS has no native
+USB boot, so use a USB boot mechanism such as Plop Boot Manager, or use the
+CD image. At the isolinux prompt, type `3` and Enter for
+`Install to internal HDD (/dev/sda)`. When prompted, type `YES` exactly. This
+erases all data on `/dev/sda`.
+
+The installer then:
+
+1. creates an MBR and one bootable partition on `/dev/sda` with `sfdisk`;
+2. creates `/dev/sda1` with
+   `mkfs.ext4 -F -L THINKPAD600X_LIV -O ^metadata_csum,^orphan_file,^64bit`;
+3. copies the live root tree and writes `extlinux.conf` and `syslinux.cfg`;
+4. copies the COM32 modules, installs extlinux, and writes the syslinux MBR; and
+5. reboots into the installed HDD.
+
+The ext4 feature exclusions are required because extlinux 6.03 cannot read a
+directory on a filesystem with `metadata_csum` or `orphan_file`; `64bit` is
+also disabled. The Buildroot-generated `rootfs.ext2` applies the same feature
+set through `BR2_TARGET_ROOTFS_EXT2_MKFS_OPTIONS`.
+
+After the reboot, the installed system uses `/dev/sda1` and extlinux. The
+`console=` order matters: the last `console=` becomes `/dev/console`, so the
+working order is `console=ttyS0,115200 console=tty0` (`tty0` last).
+
+`tty1` runs `/usr/sbin/autostart-cde`, not a getty. It calls
+`/usr/bin/startx`, which runs `/root/.xinitrc`; `.xinitrc` starts `dtwm` and
+then execs `/usr/dt/bin/Xsession`, which starts `ttsession` and `dtsession`.
+When CDE exits, the console falls back to a root shell. `ttyS0` is a normal
+getty. The `root` password is empty: log in as `root` and press Enter. Do not
+pass `/usr/dt/bin/Xsession` as a `startx` client; the generated `.xinitrc` owns
+the CDE startup sequence.
 
 Hardware-specific notes (see `docs/HARDWARE.md`):
-- No USB boot support on 600X BIOS.
-- The NeoMagic framebuffer (`CONFIG_FB_NEOMAGIC`) binds to the internal display
-  (`1024x768`); `CONFIG_FB_VESA` provides QEMU/fallback graphics.
-- PCMCIA/CardBus (`CONFIG_PCMCIA` + `CONFIG_YENTA`) supports Xircom/3Com
-  Ethernet adapters for legacy network testing.
-- IrDA (`CONFIG_IRDA`) was removed upstream in Linux 4.17; not supported.
-
-To test on real hardware:
-1. Write `bzImage` + `rootfs.ext2` to PATA IDE HDD (CF adapter or original 12 GB HDD).
-2. Verify `syslinux` MBR or direct boot loader (`LILO` with `-s` / `lilo.conf` pointing to `bzImage`).
-3. Boot; console login: `root` / `thinkpad600x`; change password immediately (`passwd`).
-4. Start X: `startx /usr/dt/bin/Xsession` (CDE).
+- No native USB boot support on the 600X BIOS.
+- The supplied kernel configuration includes the NeoMagic framebuffer
+  (`CONFIG_FB_NEOMAGIC`) and VESA fallback (`CONFIG_FB_VESA`). Real-hardware
+  NeoMagic validation remains unverified beyond `docs/adr/ADR-004-display-x11.md` and the
+  `docs/NEOMAGIC*.md` research.
+- The configuration includes PCMCIA/CardBus (`CONFIG_PCMCIA` + `CONFIG_YENTA`)
+  and legacy Ethernet modules.
+- IrDA is not enabled in the supplied kernel configuration.

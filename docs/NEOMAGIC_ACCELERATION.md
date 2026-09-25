@@ -15,15 +15,16 @@ A static-ish C tool (no Rust needed; stack is C) that, **on the physical 600X**:
 
 1. finds the device by PCI ID `0x10c8:0x0006`;
 2. `mmap`s BAR0 (fb) + BAR1 (MMIO);
-3. saves current VGA/BLT state;
-4. `neo2200_accel_init` equivalent (depth/width/pitch);
+3. waits for the engine to become idle and uses the selected geometry;
+4. `neo2200_accel_init` equivalent (depth/pitch);
 5. `--test-fill` → solid fill, verify pixels via fb read-back;
 6. `--test-blit` → screen-to-screen copy incl. overlap direction test;
 7. `--test-rop` → copy vs xor observable difference;
-8. `wait_idle(timeout)`, restore state.
+8. `wait_idle(timeout)`, then re-initialize the non-triggering depth/pitch state.
 
-Failure must be **non-destructive** (state restored; no garbage MMIO writes beyond the
-documented register block). See `NEOMAGIC_PHYSICAL_TEST.md`.
+Failure must be **non-destructive** (on normal completion the tool waits for idle
+and re-initializes the non-triggering depth/pitch state; a timeout aborts). It
+does not write unknown MMIO. See `NEOMAGIC_PHYSICAL_TEST.md`.
 
 ## Phase 2 — kernel safety prerequisites (if we touch the kernel)
 
@@ -42,8 +43,8 @@ Only needed for Option C (DRM) — the EXA path is userspace-only. Any kernel wo
 
 - Package switch to the fork (local tarball/git); `xorg.conf` `AccelMethod`/`Driver
   "neomagic"` on the physical profile.
-- Kernel: `CONFIG_FB_NEOMAGIC` already present (console accel). No change needed for the
-  userspace path.
+- Kernel: `CONFIG_FB_NEOMAGIC` already present (the console acceleration path is
+  configured). No change is needed for the userspace path.
 
 ## Phase 5 — benchmarks & validation
 

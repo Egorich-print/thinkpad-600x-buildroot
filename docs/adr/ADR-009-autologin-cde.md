@@ -6,18 +6,19 @@
 ## Context
 
 The 600X is a single-user hobby machine; typing a login on every boot is
-friction.  CDE's `dtsession` also never manages to spawn `dtwm` in this reduced
-build, so the session has to be started explicitly.
+friction.  CDE's `Xsession` starts `ttsession` and `dtsession`, but it does not
+start `dtwm` itself.  In this reduced build the session-manager helper
+`dtsmcmd` is not built, so `dtwm` has to be started explicitly.
 
 ## Decision
 
-- `tty1` runs `/usr/sbin/autostart-cde` instead of a getty: it starts the CDE
-  session (`startx /usr/dt/bin/Xsession`) as soon as the system boots, and falls
-  back to a root shell when CDE exits.  Root has an empty password.
-- The serial console (`ttyS0`) keeps a normal login for debugging.
-- `.xinitrc` starts `dtwm` itself (the CDE Front Panel is part of `dtwm`) and
-  then runs `Xsession`, which sets up the DT search paths/fonts and starts
-  `ttsession` + `dtsession`.
+- `tty1` runs `/usr/sbin/autostart-cde` instead of a getty.  It runs `startx`
+  with no client argument, so `startx` uses `/root/.xinitrc`, and falls back to
+  a root shell when the desktop exits.  Root has an empty password.
+- The serial console (`ttyS0`) keeps a normal `getty` login for debugging.
+- `/root/.xinitrc` starts `dtwm` in the background (it provides both the window
+  manager and the CDE Front Panel), then `exec`s `/usr/dt/bin/Xsession`, which
+  sets up the DT search paths/fonts and starts `ttsession` + `dtsession`.
 
 ## Consequences
 

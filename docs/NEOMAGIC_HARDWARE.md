@@ -30,8 +30,8 @@ Full chip ID table (from `include/video/neomagic.h`):
 - **maxClock: 110 MHz** (`maxClock = 110000` kHz).
 - Architected as **unified memory** (graphics logic + DRAM on one die) — see patent
   US5703806A in `NEOMAGIC_HISTORICAL.md`.
-- On real hardware the 600X reports 4 MB; the driver treats the value read from the
-  chip as authoritative (`read_neo_ram_size`/fixed table).
+- On real hardware the 600X reports 4 MB; the in-tree driver uses the per-chip
+  table (`videoRam = 4096` for NM2360), not a runtime VRAM-size probe.
 
 ## Framebuffer / memory layout
 
@@ -39,15 +39,16 @@ Full chip ID table (from `include/video/neomagic.h`):
 - **BAR1** = 2 MB MMIO register window (`MMIO_SIZE = 0x200000`) — BLT + cursor live here.
 - **Modes:** `8`, `15/16` (packed), `24` bpp. `NEO_MODE1_DEPTH8/16/24`.
 - **Pitch** (bytes/row) = `xres_virtual * bpp/8`; programmed into `pitch` register.
-- **Modes tested in tree:** 640×480, 800×600, 1024×768 (bios mode table `0x36`/`0x39` etc.).
+- **Modes tested in tree:** 640×480, 800×600, 1024×768 (the BIOS mode table
+  contains the corresponding 8/16/24-bpp entries).
 - **Endian:** driver uses `writel()`/`memcpy_toio()`, so little-endian MMIO on x86 — same
   convention the hardware expects (no byteswap in the kernel accel path).
 
 ## MMIO → register blocks
 
 ```
-BAR1 + 0x00000   BitBLT register block (struct Neo2200, 32 regs)   ← acceleration
-BAR1 + 0x00100   Hardware cursor (NEOREG_CUR*)                     ← cursor
+BAR1 + 0x00000   BitBLT register block (struct Neo2200, 37 words)  ← acceleration
+BAR1 + cursorOff  Hardware cursor (NEOREG_CUR*; 0x1000 on NM2200–NM2380)  ← cursor
 BAR1 + 0x100000  Host→video staging buffer (imageblit SYS_TO_VID)
 ```
 
@@ -73,7 +74,7 @@ engine — needed for the DDX/modesetting layer but not for the accelerator itse
 | ROP (copy / xor) | yes | `0x0C0000` / `0x060000` |
 | Directional overlap handling | yes | `BC0_X_DEC/DST_Y_DEC/SRC_Y_DEC` |
 | Clipping | yes (registers) | `clipLT`/`clipRB` + `BC3_CLIP_ON` |
-| Hardware cursor | yes | `NEOREG_CUR*` registers |
+| Hardware cursor | registers defined; `neofb` cursor path is disabled | `NEOREG_CUR*` registers; the kernel cursor routine is commented out |
 | Line drawing | **not documented** | no register/hook found in kernel or XAA source |
 | Pattern fill (8×8/32×32) | **defined, unverified** | `xpColor`/`FILL_PAT` named but unused in `neofb` |
 

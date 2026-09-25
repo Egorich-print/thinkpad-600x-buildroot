@@ -16,8 +16,9 @@ not in the global dynamic scope.
 
 - Use Xorg 21.x with `xf86-video-neomagic`; keep `vesa`/`fbdev`/`modesetting`
   for QEMU.
-- **Preload the helper modules** in `xorg.conf`'s `Module` section so their
-  symbols are already in scope when the driver is loaded.
+- **Preload the helper modules** (`vgahw`, `int10`, `fbdevhw`, `shadow`, and
+  `shadowfb`) in `xorg.conf`'s `Module` section so their symbols are already in
+  scope when the driver is loaded.
 - Do not force a `Driver` line: Xorg auto-detects, giving `neomagic` on the real
   600X and `modesetting`/`fbdev` under QEMU.
 - Set `DefaultDepth 16` (8 bpp is too few colours for modern TUI apps; 24 bpp is
@@ -26,4 +27,5 @@ not in the global dynamic scope.
 ## Consequences
 
 The RELRO hardening stays enabled.  `xorg.conf` is not "neomagic-only", so the
-same image also boots under QEMU.
+same image can use the QEMU display path.  Physical NeoMagic DDX validation is
+still pending; QEMU does not exercise that hardware path.

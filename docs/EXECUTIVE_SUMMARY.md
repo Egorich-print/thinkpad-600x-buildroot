@@ -1,71 +1,114 @@
 # Executive summary — ThinkPad 600X Linux workstation
 
-## What works (demonstrated)
+## What works (configured / QEMU-testable)
 
-- **Level 1–2 (Boot + userspace)** — Kernel 6.18.7 (`CONFIG_MPENTIUMIII`, no SMP) boots in QEMU (TCG, 64 MB). Rootfs (`ext2` over `ext4` driver) mounts; BusyBox init (`devtmpfs` + `mdev`) works.
-- **Level 3–4 (Network + SSH)** — `dropbear` serves SSH on port 2222 (host-forwarded QEMU). `udhcpc` gets 10.0.2.15; `iproute2`/`iputils` present.
-- **Hardware drivers verified** (`CONFIG_*` audited in final `.config`):
-  `ATA_PIIX`/`ATA_GENERIC`, `NEOMAGIC` framebuffer, `VESA` fallback, `PCCARD`/`CARDBUS`/`YENTA`, `USB_UHCI`/`OHCI`, `RT2800USB` (`RT53XX=y` for TL-WN727N), `BT_HCIBTUSB` (`rtl_bt` firmware profile), `THINKPAD_ACPI`, `SND_CS46XX`/`SND_INTEL8X0`, `SERIAL_8250_CONSOLE`, `INPUT_EVDEV`.
-- **Level 5 (X11 stack)** — `XORG7` + `xf86-video-neomagic`, `vesa`, `fbdev`, `evdev` (keyboard/mouse), `xinit` (`startx`), fonts (`misc`/`75dpi`/`100dpi`/`cursor`/`alias`/`encodings`) configured. OpenMotif (2.3.8) framework installed; `libXm`/`libMrm`/`libUil` build framework ready.
-- **Level 7–8 (Required apps)** — `fastfetch`, `btop`, `nedit` (`nedit-ng`), `antiword`, `dillo` (FLTK, native Buildroot 3.3.0), `lynx`, `feh` (images), `mupdf`, `mpg123`, `mc` (Midnight Commander), `xterm`, `dropbear`, `procps-ng`, `file`, `less`, `pciutils`, `smartmontools`.
-- **Tailscale** — `geode` (`GO386=softfloat`) static binary runs on `pentium3`; userspace-networking mode (`--tun=userspace-networking`) avoids `/dev/net/tun`; documented as borderline-feasible at 64 MB.
-- **Amnezia VPN 5.0.1.5+** — Full Qt6 GUI: impossible (no i386 binary, Qt6 requires x86_64). **Kernel AmneziaWG (C) + `awg-tools` (C)**: feasible headless console client; AWG 3.1 protocol interoperable with a 5.0.1.5 server.
+- **Level 1–2 (Boot + userspace)** — The supplied QEMU smoke test boots the
+  release kernel and filesystem in a 64 MB `-cpu pentium3` guest. The kernel is
+  **6.12.104** (`CONFIG_MPENTIUMIII`, no SMP); the configured userspace uses
+  BusyBox init, devtmpfs and mdev.
+- **Level 3–4 (Network + SSH)** — `scripts/qemu_test.sh` forwards host TCP 2222,
+  waits for Dropbear, and can run diagnostics over SSH. `iproute2`, `iputils`
+  and BusyBox `udhcpc` are selected.
+- **Configured hardware support** — The supplied kernel configuration includes
+  `ATA_PIIX`/`ATA_GENERIC`, the NeoMagic framebuffer, VESA fallback,
+  PCMCIA/CardBus/Yenta, USB UHCI/OHCI/EHCI and storage, Ralink/MediaTek Wi-Fi,
+  `THINKPAD_ACPI`, `SND_CS46XX`/`SND_INTEL8X0`, and serial-console support.
+  These settings are not real-hardware validation; CS46xx sound output and
+  NeoMagic behavior remain unverified beyond the existing ADR/research.
+- **Level 5 (X11 stack)** — The image selects Xorg, `xf86-video-neomagic`,
+  VESA/fbdev, `xinit` (`startx`) and the CDE/OpenMotif stack. It uses the
+  classic `mouse` and `kbd` Xorg drivers built by
+  `package/xf86-input-mouse` and `package/xf86-input-keyboard`; there is no
+  udev and therefore no `xf86-input-evdev`.
+- **Selected applications** — CDE desktop tools including `dtwm`, `dtterm`,
+  `dtfile`, `dtpad` and `dtsession`; dillo, links and lynx; nano and mg;
+  mupdf and poppler's `pdftotext`; antiword; feh; mpg123; mc; dropbear;
+  fastfetch; btop; and the other utilities selected by
+  `configs/thinkpad600x_defconfig`.
+- **Tailscale / Amnezia** — Neither is selected in
+  `configs/thinkpad600x_defconfig`; feasibility notes elsewhere do not mean
+  that these applications are installed in this image.
 
-## What partially works / is staged
+## CDE session and remaining limits
 
-- **CDE session (Level 6)** — The `cde` package (`2.5.3`) is fully defined (`.mk`, `Config.in`, build-time host-tool hooks, `startx` architecture in `CDE.md`, reference rootfs inspection for reverse-engineering). The `openmotif` build framework (2.3.8, with `libtirpc`/`lmdb` dependencies, `autotools` + `tradcpp` cross-compile fix, `--disable-printing`) is in place. The motif source (`57 MB`) is vendored in `dl/`. The full `CDE` build requires finishing the `motif` cross-compile (see `DECISIONS.md` for exact blocker and the `PRE_BUILD` host-tool approach). This is a reproducible `make` iteration; the build environment (`build/` + `docs/CDE.md`) captures exactly how to complete it.
-- **Rust** — documented as cross-compile only (`i586-unknown-linux-gnu`; `i686` = `SSE2`/Pentium 4 baseline, won't run on PIII).
-- **Benchmark suite** — `docs/MEMORY.md` (base idle ~8 MB, targets) + `docs/BENCHMARKS.md` (reproducible `free`/`proc` scripts, size audit); full CDE profile measurements deferred to the completed CDE build (methodology is documented and reproducible).
+- **CDE session (Level 6)** — CDE 2.5.3 and OpenMotif 2.3.8 are included in the
+  selected package set. The configured startup path is `tty1` →
+  `/usr/sbin/autostart-cde` → `/usr/bin/startx` → `/root/.xinitrc`;
+  `.xinitrc` starts `dtwm` and then execs `/usr/dt/bin/Xsession`, which starts
+  `ttsession` and `dtsession`. This describes the image configuration, not
+  real-hardware validation.
+- **Rust** — Target-side Rust is excluded because Buildroot's
+  `i686-unknown-linux-gnu` baseline uses SSE2, which the Pentium III lacks.
+  The alternatives and the C-based tool decision are recorded in
+  `docs/adr/ADR-010-rust-infeasible.md`.
+- **Benchmarks and memory** — Existing memory/benchmark documents contain
+  older minimal-image measurements and predictions. They are not current CDE
+  measurements; use their methodology rather than treating the old values as
+  release results.
 
 ## RAM / disk targets (measured / predicted)
 
-| Profile            | Used (MB) | Notes                         |
-|--------------------|-----------|-------------------------------|
-| Console idle       | **8**     | QEMU measured                 |
-| X11 idle (predicted)| **10–15** | No compositing / no GL        |
-| CDE idle (predicted)| **20–30** | dtwm + dtfile + dtterm         |
-| CDE + NEdit        | **30–40** | Motif editor                  |
-| CDE + Dillo        | **35–45** | FLTK browser                  |
-| CDE + MuPDF        | **30–40** | Software X11 viewer           |
-| Browser (Dillo)    | **~40**   | Near practical 64 MB limit    |
-
-Target filesystem (`ext2`, `128 MB` configured): `bzImage` ~4.9 MB, `rootfs.tar` ~44 MB (minimal profile). Full workstation profile (< 200 MB uncompressed) fits a PATA HDD.
+The configured `rootfs.ext2` is a 512 MiB ext4 filesystem image. Its filename
+reflects Buildroot's image target, not a partition table or a bootable-disk
+format. Current CDE memory figures are not asserted here; older RAM tables
+in `docs/MEMORY.md` and `docs/BENCHMARKS.md` are historical measurements or
+predictions for earlier profiles.
 
 ## Boot / deploy
 
-- **Bootloader**: `syslinux` (`syslinux.cfg` + `post-image.sh` scaffolding for MBR/ext2 disk image). The `post-image.sh` framework creates a bootable raw-HDD image profile; `syslinux.cfg` points to `/bzImage`. See `docs/BUILD.md` for image-creation commands.
-- **Physical deployment**: document `docs/HARDWARE.md` + `docs/ARCHITECTURE.md`. Image is a raw `ext2` root (`/dev/sda`) + GRUB/syslinux MBR. No USB boot on 600X BIOS; deployment is PATA-IDE (CF adapter test documented).
+- **Live bootloader** — `scripts/make-live-iso.sh` builds a hybrid CD/USB ISO
+  with isolinux entries `1` Live CDE, `2` Live Safe, and `3` Install to
+  internal HDD (`/dev/sda`). The supported physical flow is to write or burn
+  that ISO, boot it, choose `3`, and type `YES`; the installer partitions
+  `/dev/sda`, creates ext4, copies the tree, installs extlinux and the syslinux
+  MBR, and reboots into the HDD.
+- **`rootfs.ext2` is not a disk image** — It is a filesystem image only, with
+  no partition table and no bootloader. Do not use a raw `cat` of that file as
+  an installation medium.
+- **Kernel command line** — The live initramfs exists because the supplied
+  kernel cannot resolve `root=LABEL=`; it finds the ISO by content and uses
+  overlayfs plus `switch_root`. The last `console=` becomes `/dev/console`, so
+  the working installer order is `console=ttyS0,115200 console=tty0`, with
+  `tty0` last.
 
 ## Security / modernity
 
-- `glibc` (not musl) for CDE; `dropbear` (not OpenSSH server by default) to save RAM.
-- `fastfetch` + `btop` intentionally included (required) but optimized: `fastfetch` has all non-essential probes disabled (`WAYLAND=OFF`, `DRM=OFF`, `DBUS=OFF`, `VULKAN=OFF`, etc.). `btop` uses `CMAKE` / `C++20` (compatible with gcc 14.4).
-- No telemetry, no systemd, no NetworkManager, no avahi.
+- `glibc` (not musl) is selected for CDE, with BusyBox init, devtmpfs + mdev,
+  and Dropbear; no systemd, udev, NetworkManager or avahi is selected.
+- `root` has an empty password. `tty1` auto-starts CDE rather than showing a
+  getty login; `ttyS0` remains a normal getty. Set a password with `passwd` if
+  the disk will be exposed.
+- `fastfetch` is built with heavyweight probes such as Vulkan, DRM, Wayland,
+  DBus and EGL disabled. `btop` is built with GPU support disabled.
 
 ## Reproducibility
 
-One command on a Linux aarch64 host (VM or native, with `QEMU` for x86 testing):
+After the Buildroot 2026.05.2 checkout described in `docs/BUILD.md`, run the
+one-time firmware fetch, configure and build on a Linux host:
 
 ```sh
-# 1. clone / checkout
-# 2. configure (build host needs the CDE host-tool prerequisites — doc'd)
+./scripts/fetch-cs46xx-firmware.sh
 make O=$HOME/br2-out \
      BR2_EXTERNAL=/abs/path/to/thinkpad-600x-buildroot \
      thinkpad600x_defconfig
-# 3. build
 make O=$HOME/br2-out \
      BR2_EXTERNAL=/abs/path/to/thinkpad-600x-buildroot \
-     -j$(nproc)
-# 4. test (headless SSH smoke test via hostfwd TCP 2222)
+     -j"$(nproc)"
 ./scripts/qemu_test.sh
 ```
 
-All versions are pinned in `.mk` files; the reference `cde-2.5.3.tar.gz` is vendored in `dl/`; `motif-2.3.8.tar.gz` is fetched from SourceForge (cached in `dl/`).
+The CDE 2.5.3, OpenMotif 2.3.8 and other custom package versions are pinned in
+their `package/*/*.mk` files. CDE may be supplied through `$BR2_DL_DIR`; the
+repository does not require a vendored tarball.
 
-## What is NOT finished (documented blocker)
+## What is not finished (hardware validation)
 
-- The `motif` (`openmotif`) source (`57 MB`) is vendored and the build framework (`.mk`, patches for `tradcpp` host-build, `setpgrp_void`/`setvbuf_reversed` stubs, `Makefile.am` `sed` for demo removal) is fully set up, but the FULL CDE + desktop profile was not completed inside this session's time budget (the motif cross-compile requires an additional 10–15 min build iteration after the host-tool framework fixes applied in `docs/CDE.md`). The `.stamp_patched` framework passes cleanly; `make openmotif` finishes the library installation.
-- Once `motif` finishes, `cde` (`2.5.3`, with `dtsession`/`dtwm`/`dtfile`/`dtterm` via `startx`) builds quickly on top (it's autotools; `autogen` works; `tradcpp` is handled by the `PRE_BUILD` host binary; `dtsession` links against the installed `libXm` in staging). Then the full `CDE` + `NEdit` profile can be booted in QEMU and physically tested.
-- The full `docs/BENCHMARKS.md` profile (CDE idle / CDE + NEdit / browser RAM) is deferred until the motif/CDE layer completes; the measurement METHODOLOGY and base values (`console idle 8 MB`, `boot to SSH 10 s`) are reproducible now.
+- NeoMagic hardware validation beyond `docs/adr/ADR-004-display-x11.md` and the
+  `docs/NEOMAGIC*.md` research remains unverified.
+- CS46xx sound output remains unverified on the physical 600X. The build
+  includes the `snd-cs46xx` module and the non-free firmware fetch step, but
+  that does not constitute an audio-output test.
 
-The mission's core success criteria are met at **Level 1–4** (boot, userspace, networking, SSH, validated in QEMU 64 MB). Levels 5–8 (X11, CDE, apps, monitoring) are structurally complete and reproducible; finishing the motif build is a deterministic `make` step (see `docs/BUILD.md`, `docs/CDE.md`).
+The current source defines the live/installer path and a QEMU smoke test;
+neither substitutes for real-hardware validation of NeoMagic behavior or
+CS46xx audio output.

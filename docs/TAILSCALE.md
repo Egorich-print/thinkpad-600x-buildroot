@@ -1,20 +1,17 @@
 # Tailscale — feasibility report
 
-**Status: PARTIALLY FEASIBLE (feasible on CPU, marginal on RAM).**
+**Status: FEASIBILITY ONLY — not shipped in the default image (feasible on CPU, marginal on RAM).**
 
-## 32-bit x86 support — still ships
+## 32-bit x86 support — package exists, image does not enable it
 
-Tailscale still publishes `linux/386` static builds. The one that matters for the
-600X is the **`geode` build**, a generic 386 **soft-float** binary:
-
-```
-https://pkgs.tailscale.com/stable/   (current: v1.102.3)
-  tailscale_<ver>_386.tgz        -> GO386=sse2  (SIGILL on Pentium III)
-  tailscale_<ver>_geode.tgz      -> GO386=softfloat  (runs pre-SSE2)
-```
-
-The plain `_386` build uses Go's default `GO386=sse2` and will crash on a
-no-SSE2 CPU; **only the `geode` (softfloat) tarball runs on the Pentium III.**
+Buildroot 2026.05.2 provides the `tailscale` package
+(`BR2_PACKAGE_TAILSCALE`), pinned to Tailscale 1.78.1 in
+`package/tailscale/tailscale.mk`. `configs/thinkpad600x_defconfig` does not
+select that symbol, so the default release contains neither `tailscale` nor
+`tailscaled`. The Buildroot package is built with the host Go toolchain; it is
+not a prebuilt `geode` archive. A separately downloaded official 386 release
+would need the soft-float/geode variant rather than the ordinary SSE2 build;
+that external deployment is not validated in this repository.
 
 ## CPU constraint (Go → SSE2)
 
@@ -32,15 +29,22 @@ Userspace-networking is the right mode for the 600X (SOCK5/HTTP proxy).
 
 ## Memory (the real blocker)
 
-No official minimum, but `tailscaled` RSS is typically ~40–80 MB (Go runtime). On
-64 MB this is at/over the edge; a single basic node in userspace mode with
-`GOMEMLIMIT` tuned is borderline-feasible, near OOM.
+No official minimum is specified here, and the commonly cited `tailscaled` RSS
+of ~40–80 MB is an estimate, not a measurement of this image. On 64 MB it is at
+or over the edge; a single basic node in userspace mode with `GOMEMLIMIT` tuned
+is borderline-feasible, near OOM.
 
 ## Recommendation
 
-- Main image: **Tailscale-capable via optional config flag**
-  (`BR2_PACKAGE_TAILSCALE`), not enabled in the default 64 MB baseline.
-- Deploy the official `geode` tarball + `--tun=userspace-networking`.
-- Document that it "works, but tight" — RAM, not CPU, is the limiter.
-- Where only a raw WireGuard tunnel is needed, classic C `wg`/kernel module remains
-  the lighter option (but is not a Tailscale client).
+- The default image does not ship Tailscale. `BR2_PACKAGE_TAILSCALE` is a valid
+  optional Buildroot symbol, but it is not selected; enabling it also brings the
+  host Go package and the package's kernel fixups (including `CONFIG_TUN` and
+  netfilter), so it requires a separate rebuild and validation.
+- If deployed manually, use a 386 soft-float/geode binary with
+  `--tun=userspace-networking`; this remains an unvalidated plan, not a default
+  image feature.
+- Treat RAM, not CPU, as the likely limiter. The statement that it "works, but
+  tight" is a risk assessment, not a recorded result.
+- A separately built classic C `wg` client could be lighter, but no WireGuard or
+  TUN support is enabled in the current kernel config; it is not a Tailscale
+  client.

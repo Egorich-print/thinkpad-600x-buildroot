@@ -7,7 +7,7 @@ log with more detail stays in [`../DECISIONS.md`](../DECISIONS.md).
 | ADR | Title | Status |
 |-----|-------|--------|
 | [001](ADR-001-target-toolchain.md) | Target platform & toolchain (i686 Pentium III, glibc) | accepted |
-| [002](ADR-002-kernel-612-lts.md) | Kernel base: Linux 6.12 LTS (supersedes 6.18) | accepted |
+| [002](ADR-002-kernel-612-lts.md) | Kernel base: Linux 6.12 LTS | accepted (supersedes the initial 6.18 choice) |
 | [003](ADR-003-init-userspace.md) | Init / userspace: BusyBox init, devtmpfs + mdev (no systemd/udev) | accepted |
 | [004](ADR-004-display-x11.md) | Display: Xorg + legacy neomagic DDX, RELRO helper preload | accepted |
 | [005](ADR-005-live-boot-initramfs.md) | Live media boot via initramfs + overlayfs (kernel has no `root=LABEL=`) | accepted |

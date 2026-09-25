@@ -1,6 +1,8 @@
 # Amnezia VPN 5.0.1.5 — feasibility report
 
-**Status: PARTIAL — full GUI client impossible; AWG kernel-module client feasible.**
+**Status: PARTIAL (feasibility only) — the full GUI client is impossible; an AWG
+kernel-module client is feasible in principle but is not available in this
+Buildroot tree.**
 
 ## Full GUI client (=5.0.1.5): NO
 
@@ -12,7 +14,7 @@
 - Any Go component (Xray) requires `GO386=softfloat` to run on the PIII and no such
   prebuilt binary ships.
 
-## AmneziaWG (the VPN protocol itself): YES, as a pure-C client
+## AmneziaWG (the VPN protocol itself): feasible in principle, not packaged here
 
 AmneziaWG is an obfuscated WireGuard fork (DPI-resistant header/packet/timing
 obfuscation). Two implementations:
@@ -38,12 +40,15 @@ available in Buildroot.
 |------|---------------|---------|
 | Qt6 GUI 5.0.1.5 | No | Qt6 = x86_64-only; no i386; ≫64 MB RAM |
 | Go userspace / Xray | Essentially no | SSE2 (softfloat rebuild only, no prebuilt) |
-| **amneziawg kernel + awg-tools** | **Yes (headless)** | must match server AWG params; low throughput |
+| **amneziawg kernel + awg-tools** | **Feasible in principle; unavailable in this tree** | no packages/kernel options; must match server AWG params |
 
 ## Implementation plan
 
-- Optional config flag `BR2_PACKAGE_AWG` / `BR2_PACKAGE_AWG_TOOLS` scaffolding.
-- `CONFIG_WIREGUARD=m` (for the compat module) and `CONFIG_TUN=m` are already
-  enabled in the kernel.
+- This is **not implemented**.  Neither `BR2_PACKAGE_AWG` nor
+  `BR2_PACKAGE_AWG_TOOLS` exists in this external package tree or in
+  `configs/thinkpad600x_defconfig`.
+- `board/thinkpad600x/linux.config` does not enable `CONFIG_WIREGUARD` or
+  `CONFIG_TUN`; no AWG module or tools are present in the built image.  No
+  replacement Kconfig option is defined by this tree.
 - Document that "5.0.1.5 or newer" applies to **protocol interoperability**, not
   the desktop application.

@@ -8,7 +8,7 @@
 providing **solid fill, screen-to-screen bitblt, host-to-video mono-image expansion
 (i.e. accelerated text/glyph rendering), ROP (copy/xor), clipping, direction-based
 overlap handling, and a hardware cursor**. This is not reverse-engineered guesswork:
-it is the **live, in-tree code of the Linux 6.18 LTS kernel**:
+it is the **live, in-tree code of a historical `linux-6.18.7` source snapshot** (the current image uses Linux 6.12.104):
 
 - `drivers/video/fbdev/neofb.c` declares, for the NM2360 (`0x10c8:0x0006`):
   ```c
@@ -25,9 +25,9 @@ So the earlier claim "hardware acceleration is not available / shadowfb only" wa
 
 | Layer | Acceleration status |
 |-------|---------------------|
-| Linux console (fbcon) | **Already hardware-accelerated** via `neofb` (fonts use imageblit; scroll uses copyarea) |
+| Linux console (fbcon) | **Acceleration path present** via `neofb` (fonts use imageblit; scroll uses copyarea; physical operation is unverified) |
 | X11/CDE (Xorg `neomagic`/`fbdev` DDX) | **Software** (shadowfb) — the *gap to close* |
-| Hardware | Capable (BitBLT engine live in kernel) |
+| Hardware | Capable (BitBLT engine code path in the kernel) |
 
 ## Why the "no acceleration" conclusion happened
 

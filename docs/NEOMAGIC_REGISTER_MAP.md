@@ -1,6 +1,7 @@
 # NeoMagic MagicGraph 256ZX (NM2360) — Register Map
 
-All entries below are **recovered from GPL sources in the Linux 6.18 LTS tree**, not invented.
+All entries below are **recovered from GPL sources in a historical `linux-6.18.7`
+source snapshot**, not invented. The current image kernel is Linux 6.12.104.
 Primary sources:
 
 - `include/video/neomagic.h` — register names, offsets (via `struct Neo2200`), bit masks, PCI IDs.
@@ -19,8 +20,8 @@ being *named* in a header.
 | Region | Location | Size | Notes |
 |--------|----------|-----:|-------|
 | MMIO (+ BLT + cursor) | PCI BAR1 | `0x200000` (2 MB) | `vidmem`/registers; BLT block at offset 0 |
-| BLT register block | BAR1 + `0x00` | 32×4 bytes | `struct Neo2200` (see below) |
-| Hardware cursor | BAR1 + `0x100` | 6×4 bytes | `NEOREG_CUR*` |
+| BLT register block | BAR1 + `0x00` | 37×4 bytes | `struct Neo2200` (see below) |
+| Hardware cursor | BAR1 + `cursorOff` (`0x1000` on NM2200–NM2380) | 6×4 bytes | `NEOREG_CUR*` |
 | Host→video staging buffer | BAR1 + `0x100000` | — | `imageblit` writes glyph data here (`SYS_TO_VID`) |
 | Framebuffer | BAR0 (linear) | up to 4 MB | see `NEOMAGIC_HARDWARE.md` |
 
@@ -28,7 +29,7 @@ being *named* in a header.
 
 | Offset | Name | W | Meaning | Source | Conf |
 |-------:|------|:-:|---------|--------|:----:|
-| `0x00` | `bltStat` | 32 | Status/control: bit0 = BLT busy (`NEO_BS0_BLT_BUSY`), bit1 = FIFO avail, bit2 = FIFO pend; **bits[8:15] = FIFO free space**; **bits[16:31] = `bltMod`** (depth/width, written at accel init) | `neofb.c` sync/accel_init, `neomagic.h` | HIGH |
+| `0x00` | `bltStat` | 32 | Status/control: bit0 = BLT busy (`NEO_BS0_BLT_BUSY`), bit1 = FIFO avail, bit2 = FIFO pend; **bits[8:15] = FIFO free space**; **bits[16:31] = `bltMod`** (depth is written at accel init; width fields are defined in the header) | `neofb.c` sync/accel_init, `neomagic.h` | HIGH |
 | `0x04` | `bltCntl` | 32 | BLT command bits BC0/BC1/BC2/BC3 + ROP field (see below) | `neofb.c` fill/copy/imageblit | HIGH |
 | `0x08` | `xpColor` | 32 | expand-pattern color (defined; **not written** in current `neofb` accel path) | `neomagic.h` | MEDIUM |
 | `0x0C` | `fgColor` | 32 | Foreground / solid-fill / pattern color | `neofb.c` | HIGH |
@@ -114,7 +115,7 @@ being *named* in a header.
 And `pitch` register = `(pitch << 16) | pitch`, where `pitch` =
 `xres_virtual * (bpp/8)` (bytes per row), same for src and dst.
 
-## Hardware cursor (BAR1 + `cursorOff`; `cursorOff = 0x100` for NM2070–NM2380)
+## Hardware cursor (BAR1 + `cursorOff`; `cursorOff = 0x100` for NM2070–NM2160 and `0x1000` for NM2200–NM2380)
 
 | Offset | Name | Meaning | Conf |
 |-------:|------|---------|:----:|
@@ -139,8 +140,8 @@ And `pitch` register = `(pitch << 16) | pitch`, where `pitch` =
 
 **Init** (once after mode set):
 ```
-write bltStat = (bltMod /* DEPTH8|16|24 + width */) << 16
-write pitch  = (pitch_bytes << 16) | pitch_bytes          ; pitch = xres * bpp/8
+write bltStat = (bltMod /* DEPTH8|16|24 */) << 16
+write pitch  = (pitch_bytes << 16) | pitch_bytes          ; pitch = xres_virtual * bpp/8
 write fgColor/bgColor as needed
 ```
 
@@ -150,7 +151,7 @@ wait_idle()
 write bltCntl  = BC3_FIFO_EN | BC0_SRC_IS_FG | BC3_SKIP_MAPPING | ROP
                  (ROP = 0x0C0000 copy, or 0x060000 xor)
 write fgColor  = color
-write dstStart = (dx + dy*xres) * bpp/8                    ; byte offset
+write dstStart = (dx + dy*xres_virtual) * bpp/8            ; byte offset
 write xyExt    = (height << 16) | width                    ; TRIGGERS
 ```
 

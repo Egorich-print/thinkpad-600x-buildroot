@@ -15,20 +15,26 @@ print *"Disabling rootwait; root= is invalid"* and panic on a PIII-class machine
 
 ## Decision
 
-Boot a small **initramfs** (`board/thinkpad600x/initramfs/init`, ~1.5 MB, loaded
-via the isolinux `INITRD` directive) that:
+Boot a small **initramfs** (`board/thinkpad600x/initramfs/init`, loaded via the
+isolinux `INITRD` directive) that:
 
-1. probes block devices for the live media (markers `/sbin/install-live.sh` +
-   `/boot/bzImage`);
-2. mounts it read-only and layers a **RAM-backed overlayfs** for a writable live
-   root;
-3. moves `/proc /sys /dev` and `switch_root`s into it.
+1. mounts `/proc`, `/sys`, and `/dev`, then makes 15 probe passes over
+   `/dev/sr0`–`sr2`, `/dev/sda`–`sdf`, and their first partitions, mounting each
+   candidate as read-only ISO9660 until **both** `/sbin/install-live.sh` and
+   `/boot/bzImage` are present;
+2. mounts a RAM-backed tmpfs for the overlay upper/work directories and creates a
+   **RAM-backed overlayfs** rooted at the live medium, falling back to a read-only
+   bind mount if overlayfs is unavailable;
+3. reads `live.install=1`, moves `/proc`, `/sys`, and `/dev` into the new root, and
+   runs `switch_root -c /dev/console /newroot` into either
+   `/sbin/install-live.sh` or `/sbin/init`.
 
-Kernel support is built in (`USB`, `USB_UHCI_HCD`, `USB_EHCI_HCD`, `USB_STORAGE`,
-`BLK_DEV_SD`, `BLK_DEV_SR`, `ATA_PIIX`) so the medium is found before any module
-can be loaded.
+Kernel support is built in (`USB`, `USB_UHCI_HCD`, `USB_OHCI_HCD`,
+`USB_EHCI_HCD`, `USB_STORAGE`, `BLK_DEV_SD`, `BLK_DEV_SR`, `ATA_PIIX`) so the
+medium is found before any module can be loaded.
 
 ## Consequences
 
-One image boots from CD and USB.  The live root is writable (RAM).  The same
-mechanism carries the installer flag (`live.install=1`).
+One image boots from CD and USB.  The live root is writable in RAM when
+overlayfs is available and read-only under the bind-mount fallback.
+`live.install=1` selects the installer instead of the normal BusyBox init.
