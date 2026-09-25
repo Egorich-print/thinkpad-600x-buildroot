@@ -51,6 +51,19 @@ Earlier attempts that do **not** work: `root=LABEL=THINKPAD600X_LIV`
 (kernel rejects it: "Disabling rootwait; root= is invalid" → panic) and a plain
 `root=/dev/sr0` (fails on USB).
 
+The initramfs ships busybox plus the libraries its ELF `NEEDED` entries name, and
+`scripts/make-live-iso.sh` resolves that list from the binary (CDE selects
+`linux-pam`, which makes Buildroot enable BusyBox PAM, so `libpam`,
+`libpam_misc` and `libtirpc` from `/usr/lib` are needed too). Hand-writing the
+library list produced a media that panicked with `Attempted to kill init!
+exitcode=0x00007f00`; the script now fails the build instead. `/init` also
+reconnects stdio to `/dev/console` after mounting devtmpfs, because PID 1 starts
+before `/dev` exists and otherwise loses every message.
+
+Verified under QEMU (`-cpu pentium3`, 64 MB, ISO as CD): `media found on
+/dev/sr0` → `overlayfs ready` → `switch_root` → full BusyBox userspace → login
+prompt.
+
 ## On-device installer (`/sbin/install-live.sh`, label 3)
 
 - `sfdisk` creates an MBR + one bootable Linux partition on `/dev/sda`

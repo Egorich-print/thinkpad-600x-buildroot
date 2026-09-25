@@ -29,14 +29,43 @@ tar -xf "$RELEASE_DIR/rootfs.tar" -C "$STAGING"
 cp "$RELEASE_DIR/bzImage" "$STAGING/boot/bzImage"
 echo "bzImage copied"
 
-# 3. Build the live-boot initramfs (busybox + shared libs + /init).
+# 3. Build the live-boot initramfs (busybox + the shared libraries it needs).
+#    The library list is derived from the binary itself: Buildroot switches
+#    BusyBox PAM support on whenever linux-pam is selected (CDE pulls it in), so
+#    busybox additionally needs libpam, libpam_misc and libtirpc out of /usr/lib.
+#    A hand-written list silently produced an initramfs whose /init could not
+#    even start, which the kernel reports only as "Attempted to kill init!".
 echo "Building initramfs -> /boot/initrd.img ..."
-mkdir -p "$INITRD_STAGE"/{bin,lib,mnt,proc,sys,dev}
-tar -xf "$RELEASE_DIR/rootfs.tar" -C "$INITRD_STAGE" \
-    ./bin/busybox ./lib/ld-linux.so.2 ./lib/libc.so.6 ./lib/libresolv.so.2
+mkdir -p "$INITRD_STAGE"/{bin,lib,usr/lib,mnt,proc,sys,dev}
+tar -xf "$RELEASE_DIR/rootfs.tar" -C "$INITRD_STAGE" ./bin/busybox
 ln -sf busybox "$INITRD_STAGE/bin/sh"
 cp "$INITRAMFS_SRC/init" "$INITRD_STAGE/init"
 chmod +x "$INITRD_STAGE/init"
+
+needed_libs() {
+    if command -v objdump >/dev/null 2>&1; then
+        objdump -p "$1" 2>/dev/null | awk '/NEEDED/ {print $2}'
+    elif command -v readelf >/dev/null 2>&1; then
+        readelf -d "$1" 2>/dev/null | sed -n 's/.*Shared library: \[\(.*\)\]/\1/p'
+    else
+        echo "ERROR: need objdump or readelf to resolve the initramfs libraries" >&2
+        return 1
+    fi
+}
+
+# The ELF interpreter is not a NEEDED entry, so add it explicitly.
+for lib in ld-linux.so.2 $(needed_libs "$INITRD_STAGE/bin/busybox"); do
+    esc="${lib//./\\.}"
+    paths="$(tar -tf "$RELEASE_DIR/rootfs.tar" | grep -E "^\./(usr/)?lib/${esc}(\.[0-9.]+)*$")"
+    if [ -z "$paths" ]; then
+        echo "ERROR: busybox needs '$lib', which is not in release/rootfs.tar" >&2
+        exit 1
+    fi
+    # shellcheck disable=SC2086
+    tar -xf "$RELEASE_DIR/rootfs.tar" -C "$INITRD_STAGE" $paths
+    echo "  initrd: $lib"
+done
+
 ( cd "$INITRD_STAGE" && find . -print0 | cpio --null -o -H newc 2>/dev/null | gzip -9 ) \
     > "$STAGING/boot/initrd.img"
 ls -lh "$STAGING/boot/initrd.img"

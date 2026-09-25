@@ -16,11 +16,14 @@
 /bin/busybox --install -s /sbin 2>/dev/null
 export PATH=/bin:/sbin:/usr/bin:/usr/sbin
 
-echo "=== ThinkPad 600X live boot ==="
-
 mount -t proc    proc    /proc  || { echo "LIVE: cannot mount /proc"; exec sh; }
 mount -t sysfs   sysfs   /sys  2>/dev/null
 mount -t devtmpfs devtmpfs /dev 2>/dev/null || mount -t tmpfs tmpfs /dev 2>/dev/null
+# PID 1 was started before /dev existed, so its stdio is not the console and every
+# message below would be lost - which makes a failed live boot undiagnosable.
+[ -c /dev/console ] && exec >/dev/console 2>&1
+
+echo "=== ThinkPad 600X live boot ==="
 
 find_media() {
   i=0

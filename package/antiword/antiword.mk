@@ -6,9 +6,9 @@
 
 ANTIWORD_VERSION = 0.37
 ANTIWORD_SOURCE = antiword_$(ANTIWORD_VERSION).orig.tar.gz
-ANTIWORD_SITE = http://deb.debian.org/debian/pool/main/a/antiword
-ANTIWORD_LICENSE = GPL-2.0
-ANTIWORD_LICENSE_FILES = COPYING
+ANTIWORD_SITE = https://deb.debian.org/debian/pool/main/a/antiword
+ANTIWORD_LICENSE = GPL-2.0+
+ANTIWORD_LICENSE_FILES = Docs/COPYING
 
 define ANTIWORD_BUILD_CMDS
 	$(TARGET_MAKE_ENV) $(MAKE) -C $(@D) -f Makefile.Linux \

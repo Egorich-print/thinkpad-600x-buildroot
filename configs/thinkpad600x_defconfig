@@ -20,12 +20,13 @@ BR2_TARGET_GENERIC_ISSUE="IBM ThinkPad 600X workstation"
 BR2_TARGET_GENERIC_ROOT_PASSWD=""
 BR2_ROOTFS_DEVICE_CREATION_DYNAMIC_DEVTMPFS=y
 BR2_ROOTFS_DEVICE_CREATION_DYNAMIC_MDEV=y
-BR2_TARGET_GENERIC_GETTY_PORT="tty1"
 BR2_SYSTEM_DHCP="eth0"
 BR2_ROOTFS_OVERLAY="$(BR2_EXTERNAL_THINKPAD600X_PATH)/board/thinkpad600x/rootfs-overlay"
 BR2_ROOTFS_POST_BUILD_SCRIPT="$(BR2_EXTERNAL_THINKPAD600X_PATH)/board/thinkpad600x/post-build.sh"
-# Filesystem label used by the installed HDD system and by the live media probe.
-BR2_ROOTFS_LABEL="THINKPAD600X_LIV"
+# Label on the generated ext2 image (the ISO volume name is set separately in
+# scripts/make-live-iso.sh).  Nothing at boot time depends on it: the kernel
+# cannot resolve LABEL= at all (ADR-005) and the live probe matches by content.
+BR2_TARGET_ROOTFS_EXT2_LABEL="THINKPAD600X_LIV"
 
 # --- Kernel ---
 BR2_LINUX_KERNEL=y
@@ -65,11 +66,11 @@ BR2_PACKAGE_XSERVER_XORG_SERVER_XEPHYR=n
 BR2_PACKAGE_XDRIVER_XF86_VIDEO_NEOMAGIC=y
 BR2_PACKAGE_XDRIVER_XF86_VIDEO_VESA=y
 BR2_PACKAGE_XDRIVER_XF86_VIDEO_FBDEV=y
-BR2_PACKAGE_XDRIVER_XF86_VIDEO_CIRRUS=y
-# No udev here, so xf86-input-evdev (needs libudev) is unavailable. The classic
-# mouse/keyboard drivers are shipped prebuilt in the rootfs overlay
-# (usr/lib/xorg/modules/input/{mouse_drv,kbd_drv}.so) - see package/xf86-input-*
-# and docs/X11.md for how they are built.
+# No udev here, so xf86-input-evdev (needs libudev) is unavailable.  Build the
+# classic mouse/keyboard drivers instead (external packages; see
+# package/xf86-input-* and docs/X11.md).
+BR2_PACKAGE_XF86_INPUT_MOUSE=y
+BR2_PACKAGE_XF86_INPUT_KEYBOARD=y
 BR2_PACKAGE_XAPP_XINIT=y
 BR2_PACKAGE_XAPP_XAUTH=y
 BR2_PACKAGE_XAPP_XRDB=y
@@ -203,6 +204,10 @@ BR2_PACKAGE_XAPP_XPROP=y
 BR2_TARGET_ROOTFS_EXT2=y
 BR2_TARGET_ROOTFS_EXT2_4=y
 BR2_TARGET_ROOTFS_EXT2_SIZE="512M"
+# extlinux/syslinux 6.03 cannot read a directory on an ext4 carrying
+# metadata_csum/orphan_file, and 64bit buys nothing on a 40 GB PATA disk.
+# The in-image installer creates the same feature set on /dev/sda1.
+BR2_TARGET_ROOTFS_EXT2_MKFS_OPTIONS="-O ^metadata_csum,^orphan_file,^64bit"
 BR2_TARGET_ROOTFS_TAR=y
 
 # --- Bootloader: provide extlinux + MBR so the live installer can make the

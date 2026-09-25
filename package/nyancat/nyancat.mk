@@ -8,7 +8,8 @@ NYANCAT_VERSION = 1.5.2
 NYANCAT_SOURCE = nyancat-$(NYANCAT_VERSION).tar.gz
 NYANCAT_SITE = https://github.com/klange/nyancat/archive/refs/tags/$(NYANCAT_VERSION)
 NYANCAT_LICENSE = NCSA
-NYANCAT_LICENSE_FILES = LICENSE
+# The 1.5.2 tarball has no LICENSE file: the grant lives in the source header.
+NYANCAT_LICENSE_FILES = src/nyancat.c
 NYANCAT_DEPENDENCIES = ncurses
 
 define NYANCAT_BUILD_CMDS
