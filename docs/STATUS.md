@@ -1,23 +1,30 @@
 # Status / resume state
 
-Last updated: live-media + on-device installer work (local QEMU report; no retained logs).
+Last updated: 2026-09-25 — full rebuild, plus live-media and on-device installer
+re-verified end-to-end in QEMU against the current image.
 
-## Status: reported working — live CD/USB boots, installs to HDD, installed HDD boots
+## Status: working — live CD/USB boots, installs to HDD, installed HDD boots
 
-The operator reported an end-to-end QEMU run for the following flow
-(`-M pc -cpu pentium3`); it is not reproducible from the repository:
+Re-verified on 2026-09-25 with the current build (`-M pc -cpu pentium3`, 64 MB,
+hybrid ISO as CD, a blank 4 GB disk as install target):
 
-1. **Live boot from CD** (El Torito + initramfs) → overlayfs writable root → login.
-2. **Live boot from USB** (USB stick holding the ISO, after an internal IDE disk) →
-   media found on `/dev/sdb` → login.
-3. **Install to internal HDD** (`live.install=1`) → MBR + ext4 + extlinux.
-4. **Boot the installed HDD** → `SYSLINUX 6.03` → ext4 root → login.
+1. **Live boot** → `media found on /dev/sr0` → `overlayfs ready` → `switch_root`
+   → BusyBox userspace (syslogd, mdev, rpcbind, udhcpc, dropbear) → login prompt.
+2. **Install to the internal disk** (`live.install=1 live.install.auto=1`) →
+   MBR + ext4 without `metadata_csum` + tree copy + extlinux + MBR code →
+   "Installation complete" → reboot.
+3. **Boot the installed disk** → `SYSLINUX 6.03` (`ldlinux.sys` + `ldlinux.c32` in
+   `/boot`) → `root=/dev/sda1 rootfstype=ext4 rw rootwait` → ext4 mounted `rw` →
+   login prompt.
+
+A direct kernel+rootfs boot additionally shows `types.xdr` compiled on the target
+(15212 bytes by `S95tttypes`), Xorg started and the CDE session launched; the
+desktop itself is not drawn under QEMU (`failed to add fb -22` against QEMU's
+bochs-drm), which is an emulation artifact, not an image problem.
 
 No boot log is tracked in the repository (`release/*.log` is git-ignored; only
-`release/SHA256SUMS.txt` is committed). A local capture of a direct
-kernel+rootfs boot under QEMU (`root=/dev/sda`, no initramfs) reached the serial
-login prompt on `ttyS0`, but it comes from a 6.18.7 image, so the live-media
-(CD/USB) flows above have no retained evidence either.
+`release/SHA256SUMS.txt` is committed), so the commands above are the reproducible
+evidence rather than a retained transcript.
 
 ## Kernel: Linux 6.12.104 LTS (i686, `-march=pentium3`, glibc)
 

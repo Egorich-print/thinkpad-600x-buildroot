@@ -60,6 +60,19 @@ Live media (from the project root):
 The script consumes `release/bzImage` and `release/rootfs.tar`. See
 `docs/DEPLOY.md` for the installer menu entry and physical installation flow.
 
+Fast host-only checks — no Buildroot run required, run these before every commit:
+
+```sh
+./scripts/check.sh
+```
+
+They cover shell syntax and shellcheck for every script (including the installer
+extracted from its heredoc), `-Wall -Wextra` for the C tools, that nothing pulls
+in an `-march` above `pentium3`, that every downloaded external package has a
+hash matching its real source name, the kernel/defconfig invariants the initramfs
+depends on, and — when `release/rootfs.tar` exists — that every shared library
+`busybox` needs is actually present in the image.
+
 QEMU smoke test (from macOS):
 
 ```sh
