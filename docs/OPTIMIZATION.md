@@ -28,10 +28,12 @@
   выбора `choice "Preemption Model"`: в `kernel/Kconfig.preempt` у choice стоит
   `default PREEMPT_NONE`.
 - `CONFIG_PREEMPT_DYNAMIC=y` — включается тоже по умолчанию, потому что сам
-  символ объявлен как `default y if HAVE_PREEMPT_DYNAMIC_CALL`, а на arm64 это
-  условие выполняется. Это не альтернатива `PREEMPT_NONE`, а возможность
-  сменить модель на лету: `preempt=` в cmdline. В дереве нет ни одной строки
-  с `preempt=` (`grep -rn 'preempt=' .` пусто), так что переключать нечего.
+  символ объявлен как `default y if HAVE_PREEMPT_DYNAMIC_CALL`, а для нашей
+  цели (x86) это условие выполняется: `arch/x86/Kconfig` делает
+  `select HAVE_PREEMPT_DYNAMIC_CALL`. Это не альтернатива `PREEMPT_NONE`, а
+  возможность сменить модель на лету: `preempt=` в cmdline. В дереве нет ни
+  одной строки с `preempt=` (`grep -rn 'preempt=' .` пусто), так что переключать
+  нечего.
 
 Итоговая модель выбирается в `preempt_dynamic_init()`
 (`kernel/sched/core.c`): при `IS_ENABLED(CONFIG_PREEMPT_NONE)` вызывается
@@ -47,7 +49,7 @@
 
 > Не проверено: строка `Dynamic Preempt: none` — это сообщение раннего лога
 > ядра во время загрузки (`pr_info` в `kernel/sched/core.c`), не строка build
-> лога. Ни в одном логе сборки в VM (`build.log`, `build3.log`…`build6.log`)
+> лога. Ни в одном логе сборки в VM (`build.log`, `build3.log`…`build9.log`)
 > её нет: единственное вхождение `preempt` — это баннер самого хоста-VM
 > (`Linux lima-br2 6.8.0-139-generic … PREEMPT_DYNAMIC`), то есть ядра Ubuntu,
 > а не целевого ядра. Вывод выше сделан по исходникам ядра и `auto.conf`.

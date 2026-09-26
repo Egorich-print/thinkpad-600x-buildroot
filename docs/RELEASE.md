@@ -92,10 +92,10 @@ Buildroot в `release/`, затем перегенерировать отсле�
   `-mtune=pentium3`, `-O2`, glibc.
 - Kernel 6.12.104: `CONFIG_MPENTIUMIII`, `SMP` off, `CONFIG_CC_OPTIMIZE_FOR_SIZE`.
   Опция `PREEMPT` не задана → `CONFIG_PREEMPT_NONE=y` по умолчанию ядра.
-  `CONFIG_PREEMPT_DYNAMIC=y` тоже включён по умолчанию (arm64
-  `HAVE_PREEMPT_DYNAMIC_CALL`), но это лишь возможность сменить модель через
-  `preempt=` в cmdline, а не признак того, что вытеснение динамическое; в
-  дереве `preempt=` не встречается.
+  `CONFIG_PREEMPT_DYNAMIC=y` тоже включён по умолчанию (для x86 символ
+  `HAVE_PREEMPT_DYNAMIC_CALL` выбирается в `arch/x86/Kconfig`), но это лишь
+  возможность сменить модель через `preempt=` в cmdline, а не признак того,
+  что вытеснение динамическое; в дереве `preempt=` не встречается.
 - FS: создаваемый `rootfs.ext2` — это ext4 несмотря на имя (`BR2_TARGET_ROOTFS_EXT2_4=y`,
   `CONFIG_EXT4_USE_FOR_EXT2=y`); `noatime` устанавливается в fstab инсталлятора.
 - И создаваемый `rootfs.ext2`, и инсталлятор создают ext4 без `metadata_csum`,

@@ -122,7 +122,7 @@
 
 ## RAM economics
 
-- Kernel image: ~3.9 MB (exact value in `release/` + `release/SHA256SUMS.txt`);
+- Kernel image: ≈3.7 MiB (exact value in `release/` + `release/SHA256SUMS.txt`);
   resident-kernel and base-userspace figures are historical estimates.
 - Xorg + neomagic: ~10-12 MB predicted; the CDE/dtwm layer: ~20-25 MB predicted.
 - These are estimates/predictions, not verified physical-600X measurements; see

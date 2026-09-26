@@ -260,8 +260,9 @@ extlinux --install /mnt/target/boot || die "extlinux --install failed"
 
 # Write the syslinux MBR code to sector 0 (first 440 bytes only, so the
 # partition table stays intact).  Without it the disk does not boot at all.
-# /usr/share/syslinux/mbr.bin comes from Buildroot's syslinux target
-# (BR2_TARGET_SYSLINUX_MBR=y); the overlay does not carry a copy.
+# /usr/share/syslinux/mbr.bin is hand-shipped in the rootfs overlay: Buildroot
+# stages syslinux images into $(BINARIES_DIR)/syslinux/, not into the target, so
+# no package puts this file in the image.
 MBR_OK=0
 if [ -f /usr/share/syslinux/mbr.bin ]; then
     dd if=/usr/share/syslinux/mbr.bin of=/dev/sda bs=440 count=1 conv=notrunc 2>/dev/null && MBR_OK=1

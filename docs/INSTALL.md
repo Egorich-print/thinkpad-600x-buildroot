@@ -152,7 +152,9 @@ make ASCIIDOC_OK=-1 A2X_XML_OK=-1 \
 file bios/extlinux/extlinux   # должен быть ELF 32-bit i386 PIE, not stripped
 '
 # скопировать в board/thinkpad600x/rootfs-overlay/usr/sbin/extlinux
-# (перезаписывает target-файл /usr/sbin/extlinux)
+# (Buildroot не ставит i686 extlinux в target: его syslinux-пакет собирает
+# установщики под хост, поэтому /usr/sbin/extlinux в образе существует только
+# благодаря этому файлу оверлея)
 shasum -a 256 board/thinkpad600x/rootfs-overlay/usr/sbin/extlinux
 ```
 
@@ -166,7 +168,7 @@ shasum -a 256 board/thinkpad600x/rootfs-overlay/usr/sbin/extlinux
 - Команда обязана **падать с ошибкой**: никаких `|| true` после `make` — иначе
   неудачная сборка тихо оставит старый или отсутствующий бинарь.
 - Ожидаемый результат: ELF 32-bit i386 PIE, **не stripped** (`with debug_info`),
-  ≈289 KB; этот файл заменяет `/usr/sbin/extlinux` в target-образе.
+  ≈289 KB; этот файл — единственный источник `/usr/sbin/extlinux` в образе.
 - Идентичность артефакта (чтобы ловить дрейф): sha256 committed-файла
   `board/thinkpad600x/rootfs-overlay/usr/sbin/extlinux` =
   `528be53a9329cc3e2891c6b1d4a53a99e1d56dcd8e1e9b02a9083e7f3e34741f`

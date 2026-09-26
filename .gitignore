@@ -23,6 +23,7 @@
 # Editor/OS cruft
 .DS_Store
 *.swp
+*.swo
 *~
 *.bak
 *.orig
@@ -30,6 +31,7 @@
 \#*\#
 .vscode/
 .idea/
+/release/*.sha256
 
 # Non-free CS46xx DSP firmware (fetch with scripts/fetch-cs46xx-firmware.sh)
 /board/thinkpad600x/rootfs-overlay/lib/firmware/cs46xx/

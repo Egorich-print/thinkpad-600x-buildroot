@@ -50,10 +50,14 @@ limactl shell br2 -- tar -xzf ~/src.tar.gz -C ~
 Then build inside the instance:
 
 ```sh
-limactl shell br2 -- bash -c 'make O=$HOME/br2-out \
+limactl shell br2 -- bash -c 'cd ~/buildroot && \
+    make O=$HOME/br2-out \
     BR2_EXTERNAL=$HOME/thinkpad-600x-buildroot thinkpad600x_defconfig && \
     make O=$HOME/br2-out BR2_EXTERNAL=$HOME/thinkpad-600x-buildroot -j10'
 ```
+
+> `cd ~/buildroot` is required: `make` runs in the Buildroot source tree, and
+> `$HOME` itself has no Makefile.
 
 > AppleDouble `._*` sidecars must never reach the build tree: they end up inside
 > the shipped image, and `scripts/check.sh` fails if `release/rootfs.tar`

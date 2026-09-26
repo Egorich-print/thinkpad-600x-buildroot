@@ -16,7 +16,10 @@ That firmware was removed from linux-firmware (unknown/non-free licence).
   `scripts/fetch-cs46xx-firmware.sh`, which drops them into the rootfs overlay
   (`/lib/firmware/cs46xx/`).
 - Keep the blobs **out of git** (`.gitignore`), since they are non-free.
-- `snd-cs46xx` is auto-loaded from `/etc/modules`; `alsa-utils`
+- `snd-cs46xx` is a module and is loaded by mdev's modalias coldplug
+  (`S10mdev` runs `find /sys/ -name modalias | xargs modprobe`); there is no
+  `/etc/modules` in this image, and `S11modules` only reads
+  `/etc/modules-load.d/`, which does not exist. `alsa-utils`
   (`aplay`, `amixer`, `alsactl`, and `speaker-test`) is included for testing.
 
 ## Consequences

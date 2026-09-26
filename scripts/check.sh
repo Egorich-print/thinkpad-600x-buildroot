@@ -133,19 +133,14 @@ for dead in CGROUPS NETFILTER TUN WIREGUARD BT PARPORT PARPORT_PC USB_MON \
             ZISOFS UDF_FS SENSORS_CORETEMP HW_RANDOM_INTEL; do
     if grep -qE "^CONFIG_${dead}=" board/thinkpad600x/linux.config; then
         bad "dead option enabled: CONFIG_$dead"
+    elif grep -q "^# CONFIG_${dead} is not set" board/thinkpad600x/linux.config; then
+        ok "switched off explicitly: CONFIG_$dead"
     else
-        how="$(grep -c "^# CONFIG_${dead} is not set" board/thinkpad600x/linux.config)"
-        if [ "$how" -gt 0 ]; then
-            ok "switched off explicitly: CONFIG_$dead"
-        else
-            ok "not set (Kconfig default n): CONFIG_$dead"
-        fi
+        ok "not listed in linux.config: CONFIG_$dead"
     fi
 done
 
 echo "== defconfig invariants =="
-# BR2_TARGET_SYSLINUX_MBR matters because the in-image installer writes
-# /usr/share/syslinux/mbr.bin from the build; the overlay carries no copy.
 while read -r opt; do
     grep -qx "$opt" configs/thinkpad600x_defconfig && ok "$opt" || bad "$opt missing"
 done <<'EOF'
@@ -156,35 +151,59 @@ BR2_TARGET_ROOTFS_EXT2_MKFS_OPTIONS="-O ^metadata_csum,^orphan_file,^64bit"
 EOF
 # Buildroot stages syslinux images into $(BINARIES_DIR)/syslinux/, never into
 # $(TARGET_DIR), so the MBR code has to be hand-shipped for the installer.
-[ -f board/thinkpad600x/rootfs-overlay/usr/share/syslinux/mbr.bin ] \
-    && ok "overlay ships mbr.bin for the installer" \
-    || bad "overlay mbr.bin is missing - the installer would die with 'mbr.bin not found'"
-[ -x board/thinkpad600x/rootfs-overlay/usr/sbin/extlinux ] \
-    && ok "overlay ships the i686 extlinux" \
-    || bad "overlay usr/sbin/extlinux is missing"
-for gone in "BR2_ROOTFS_LABEL" "BR2_PACKAGE_XSERVER_XORG_SERVER_XEPHYR=n" \
+mbr=board/thinkpad600x/rootfs-overlay/usr/share/syslinux/mbr.bin
+ext=board/thinkpad600x/rootfs-overlay/usr/sbin/extlinux
+check_sha() {
+    got="$(shasum -a 256 "$2" 2>/dev/null | cut -d' ' -f1)"
+    if [ "$got" = "$3" ]; then ok "$1: sha256 $3"
+    else bad "$1: sha256 is ${got:-<unreadable>}, expected $3"; fi
+}
+if [ -f "$mbr" ]; then check_sha "overlay mbr.bin" "$mbr" \
+    4746f74bc9b9d3d579c41988a4a29bb7ac932ad1c70470ea779ea161eb799b64
+else
+    bad "overlay mbr.bin is missing - the installer would die with 'mbr.bin not found'"
+fi
+if [ -f "$ext" ]; then check_sha "overlay i686 extlinux" "$ext" \
+    528be53a9329cc3e2891c6b1d4a53a99e1d56dcd8e1e9b02a9083e7f3e34741f
+else
+    bad "overlay usr/sbin/extlinux is missing"
+fi
+for gone in "BR2_PACKAGE_XSERVER_XORG_SERVER_XEPHYR=n" \
             "BR2_PACKAGE_E2FSPROGS_RESIZE2FS=y" "BR2_PACKAGE_DOSFSTOOLS=y"; do
     grep -q "^$gone" configs/thinkpad600x_defconfig \
         && bad "no-op/unused option still set: $gone" || ok "not set: $gone"
 done
 
+echo "== worktree is free of AppleDouble sidecars =="
+sidecars="$(find . -path ./.git -prune -o -name '._*' -print 2>/dev/null)"
+if [ -z "$sidecars" ]; then
+    ok "no ._* files under the worktree (including the rootfs overlay)"
+else
+    bad "AppleDouble sidecars in the worktree - they end up in the image:"
+    printf '%s\n' "$sidecars" | head -5 | sed 's/^/       /'
+fi
+
 echo "== release image is clean =="
 if [ ! -f release/rootfs.tar ]; then
     echo "  skip (release/rootfs.tar not built yet)"
 else
-    # bsdtar hides AppleDouble members when reading, so count them from the
-    # raw listing rather than trusting a single tool.
-    n="$(python3 -c '
-import sys, tarfile
-t = tarfile.open("release/rootfs.tar")
-print(sum(1 for m in t.getmembers() if "/" in m.name and m.name.rsplit("/", 1)[1].startswith("._")))
-' 2>/dev/null)"
-    if [ -z "$n" ]; then
-        echo "  skip (python3 unavailable)"
-    elif [ "$n" -eq 0 ]; then
-        ok "no AppleDouble sidecars in release/rootfs.tar"
+    # bsdtar hides AppleDouble members when reading (and only for those that have
+    # a matching real file), so count them with a parser that sees every member.
+    if ! command -v python3 >/dev/null 2>&1; then
+        bad "python3 is required to check the image for AppleDouble sidecars"
     else
-        bad "release/rootfs.tar carries $n AppleDouble ._* files - rebuild the image from a clean tree"
+        n="$(python3 -c '
+import tarfile
+t = tarfile.open("release/rootfs.tar")
+print(sum(1 for m in t.getmembers() if m.name.rsplit("/", 1)[-1].startswith("._")))
+' 2>/dev/null)" || n=""
+        if [ -z "$n" ]; then
+            bad "could not count AppleDouble sidecars in release/rootfs.tar - gate is inconclusive"
+        elif [ "$n" -eq 0 ]; then
+            ok "no AppleDouble sidecars in release/rootfs.tar"
+        else
+            bad "release/rootfs.tar carries $n AppleDouble ._* files - rebuild the image from a clean tree"
+        fi
     fi
 fi
 
