@@ -18,8 +18,10 @@ i686, glibc, CDE (Common Desktop Environment) + X11.
     MMX/не-SIMD путь. Отдельно: `vpxor`(AVX) в coreutils — из gnulib (12× `cpuid`
     в бинаре подтверждают runtime-диспетчеризацию).
 - **Оптимизации**: `-march=pentium3 -mtune=pentium3 -O2` (пользовательское),
-  ядро `CONFIG_CC_OPTIMIZE_FOR_SIZE` (`-Os`), `CONFIG_MPENTIUMIII`,
-  `PREEMPT_DYNAMIC`.
+  ядро `CONFIG_CC_OPTIMIZE_FOR_SIZE` (`-Os`), `CONFIG_MPENTIUMIII`.
+  Модель вытеснения не настраивается: в `board/thinkpad600x/linux.config` опции
+  `PREEMPT` нет, действует kernel-default `CONFIG_PREEMPT_NONE=y`; подробности и
+  доказательства — в `docs/OPTIMIZATION.md` («Preemption: что на самом деле»).
 - Аппаратная проверка NeoMagic и CS46xx на физическом 600X не выполнена.
 
 ## Измеренные значения (RAM, QEMU `-m 64`)
@@ -37,10 +39,12 @@ i686, glibc, CDE (Common Desktop Environment) + X11.
 
 | Артефакт | Размер |
 |----------|-------:|
-| `bzImage` | ~3.9 MB (текущий release-артефакт, ядро -Os) |
+| `bzImage` | ≈3.7 MiB (текущий release-артефакт, ядро -Os) |
 | `rootfs.ext2` | 512 MiB (файловая система; не сырой диск) |
-| `rootfs.tar` | ~270 MiB |
-| `/tmp/thinkpad600x-live.iso` | собирается по требованию, не отслеживается |
+| `rootfs.tar` | ≈253 MiB |
+| `/tmp/thinkpad600x-live.iso` | ≈252 MiB; собирается по требованию, не отслеживается |
+
+Значения приблизительные; точные лежат в `release/` и `release/SHA256SUMS.txt`.
 
 `rootfs.ext2` — filesystem image без таблицы разделов и bootloader'а; его нельзя
 считать готовым raw-диском для установки. Поддерживаемая установка выполняется
@@ -86,8 +90,12 @@ Buildroot в `release/`, затем перегенерировать отсле�
 
 - Toolchain: gcc 14.4.0, `i686-buildroot-linux-gnu`, `-march=pentium3`,
   `-mtune=pentium3`, `-O2`, glibc.
-- Kernel 6.12.104: `CONFIG_MPENTIUMIII`, `SMP` off, `CONFIG_CC_OPTIMIZE_FOR_SIZE`,
-  `PREEMPT_DYNAMIC`.
+- Kernel 6.12.104: `CONFIG_MPENTIUMIII`, `SMP` off, `CONFIG_CC_OPTIMIZE_FOR_SIZE`.
+  Опция `PREEMPT` не задана → `CONFIG_PREEMPT_NONE=y` по умолчанию ядра.
+  `CONFIG_PREEMPT_DYNAMIC=y` тоже включён по умолчанию (arm64
+  `HAVE_PREEMPT_DYNAMIC_CALL`), но это лишь возможность сменить модель через
+  `preempt=` в cmdline, а не признак того, что вытеснение динамическое; в
+  дереве `preempt=` не встречается.
 - FS: создаваемый `rootfs.ext2` — это ext4 несмотря на имя (`BR2_TARGET_ROOTFS_EXT2_4=y`,
   `CONFIG_EXT4_USE_FOR_EXT2=y`); `noatime` устанавливается в fstab инсталлятора.
 - И создаваемый `rootfs.ext2`, и инсталлятор создают ext4 без `metadata_csum`,

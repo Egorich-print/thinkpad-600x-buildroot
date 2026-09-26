@@ -6,10 +6,11 @@ Physical 600X results will be faster for bootloader/kernel init (no TCG overhead
 but slower for mechanical disk reads.
 
 **Evidence caveat:** the repository tracks no boot log at all (`release/*.log`
-is git-ignored; only `release/SHA256SUMS.txt` is committed). Local captures (for
-example `release/qemu-boot.log`) carry no timestamps, so none
-of the timing values below can be derived from them; they also come from a Linux
-6.18.7 image (pre-6.12) and record `udhcpc: no lease`. Treat every timing as
+is git-ignored; only `release/SHA256SUMS.txt` is committed). The local QEMU
+captures that were kept under `release/` have been deleted, so no file can be
+cited as evidence; they carried no timestamps, so none
+of the timing values below can be derived from them; they also came from a Linux
+6.18.7 image (pre-6.12) and recorded `udhcpc: no lease`. Treat every timing as
 **unverified** until re-measured.
 
 ## Timing
@@ -22,9 +23,10 @@ of the timing values below can be derived from them; they also come from a Linux
 | `dropbear` start      | ~2 s      | SSH server |
 | Login prompt (getty)  | ~15–25 s  | On `ttyS0`; the log shows `udhcpc: no lease`, not a DHCP lease |
 | Full console idle     | ~25 s     | After the getty on `ttyS0` (tty1 auto-starts CDE) |
-| Kernel image (`bzImage`) | ≈3.9 MB | `linux-6.12.104` in the current `release/bzImage` |
+| Kernel image (`bzImage`) | ≈3.7 MiB | `linux-6.12.104` in the current `release/bzImage` |
 | Root filesystem image (`rootfs.ext2`) | 512 MiB | Fixed-size image; used-tree size not reproducible from the repository |
-| Rootfs tar (`rootfs.tar`) | ≈270 MiB (~283 MB) | Current `release/` artifact |
+| Rootfs tar (`rootfs.tar`) | ≈253 MiB | Current `release/` artifact; exact sizes in `release/` + `release/SHA256SUMS.txt` |
+| Live hybrid ISO | ≈252 MiB | Built on demand to `/tmp/thinkpad600x-live.iso`; not shipped |
 
 ## Size audit (rootfs contributions, approximate)
 
@@ -41,13 +43,13 @@ of the timing values below can be derived from them; they also come from a Linux
 These per-component figures are historical estimates from a minimal-image audit
 and are not reproducible from the repository. The current full workstation
 profile (CDE + apps + browser + office + PDF) ships as `release/rootfs.tar`
-≈270 MiB (~283 MB) in `release/` (checksums in `release/SHA256SUMS.txt`), and
+≈253 MiB in `release/` (checksums in `release/SHA256SUMS.txt`), and
 the root image is a fixed 512 MiB (`BR2_TARGET_ROOTFS_EXT2_SIZE="512M"`).
 
 ## CPU / memory profile (after boot)
 
 Measured via `/proc/meminfo` and `free -m` (QEMU 64 MB):
-- **Kernel**: `release/bzImage` ≈3.9 MB compressed; resident kernel + modules
+- **Kernel**: `release/bzImage` ≈3.7 MiB compressed; resident kernel + modules
   ~4–6 MB (estimate from the old image, not re-measured).
 - **Base userspace (console idle)**: 8 MB used / 30 MB free (after boot + SSH)
   — from the old smoke-test transcript, not preserved in the repository.

@@ -67,8 +67,9 @@
 4. BusyBox `init` reads `/etc/inittab`: mounts proc/sysfs/devpts/tmpfs, runs
    `rcS`.
 5. `rcS` starts the generated services, including syslog/klog, sysctl, mdev,
-   modules, `S30rpcbind`, `S40network` (DHCP on `eth0`), crond, dropbear, and
-   `S95tttypes` (the target-side ToolTalk type database).
+   `S11modules` (a no-op in this image: it only reads `/etc/modules-load.d/`,
+   which does not exist here), `S30rpcbind`, `S40network` (DHCP on `eth0`),
+   crond, dropbear, and `S95tttypes` (the target-side ToolTalk type database).
 6. `tty1` runs `/usr/sbin/autostart-cde`; only `ttyS0` runs a login `getty`.
    `root` has an empty password.
 7. `autostart-cde` runs `startx` with no client argument. `startx` uses
@@ -101,7 +102,9 @@
 - The full-RELRO workaround is the `xorg.conf` preload of `vgahw`, `int10`,
   `fbdevhw`, `shadow`, and `shadowfb`; `DefaultDepth 16` is set. Physical NeoMagic
   DDX validation remains pending.
-- **Audio** uses `CONFIG_SND_CS46XX=m` and auto-loads it from `/etc/modules`; its
+- **Audio** uses `CONFIG_SND_CS46XX=m`, loaded by mdev's modalias coldplug in
+  `S10mdev` (`find /sys/ -name modalias … | xargs -0 modprobe -abq`); nothing
+  reads `/etc/modules`, which was removed as unread configuration. Its
   non-free firmware is fetched by `scripts/fetch-cs46xx-firmware.sh` and is not
   committed. Real-hardware output is unverified.
 - **Wi-Fi** includes MediaTek MT7601U (TL-WN727N, `148f:7601`), Ralink
@@ -119,8 +122,8 @@
 
 ## RAM economics
 
-- Kernel image: ~3.9 MB; resident-kernel and base-userspace figures are historical
-  estimates.
+- Kernel image: ~3.9 MB (exact value in `release/` + `release/SHA256SUMS.txt`);
+  resident-kernel and base-userspace figures are historical estimates.
 - Xorg + neomagic: ~10-12 MB predicted; the CDE/dtwm layer: ~20-25 MB predicted.
 - These are estimates/predictions, not verified physical-600X measurements; see
   `docs/MEMORY.md` / `docs/BENCHMARKS.md`.

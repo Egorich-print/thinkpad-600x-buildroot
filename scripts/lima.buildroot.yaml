@@ -1,3 +1,7 @@
+# Build VM for thinkpad-600x-buildroot (instance `br2`).
+# The host home is deliberately NOT mounted: copy the tree into the VM with
+# tar + `limactl copy` instead — see the copy-in recipe in docs/BUILD.md.
+# Matches the live instance (`limactl list`, ~/.lima/br2/lima.yaml).
 vmType: vz
 arch: aarch64
 images:
@@ -5,10 +9,7 @@ images:
     arch: "aarch64"
 cpus: 10
 memory: "16GiB"
-disk: "80GiB"
-mounts:
-  - location: "~"
-    writable: true
+disk: "121GiB"
 ssh:
   loadDotSSHPubKeys: true
 containerd:

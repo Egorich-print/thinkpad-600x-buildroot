@@ -7,12 +7,13 @@ PATA-диск 600X.
 
 | Артефакт | Размер | Назначение |
 |----------|-------:|-----------|
-| `/tmp/thinkpad600x-live.iso` | ~270 MiB + bootloader/initrd overhead | гибридный live CD/USB (El Torito + isohybrid MBR) |
-| `release/bzImage` | ~3.8 MB | ядро Linux 6.12.104 LTS (i686 pentium3) |
-| `release/rootfs.tar` | ~270 MB | корневое дерево (CDE + X11 + приложения) |
-| `release/rootfs.ext2` | 512 MB | ext4-образ корня (для host-side записи) |
+| `/tmp/thinkpad600x-live.iso` | ≈252 MiB | гибридный live CD/USB (El Torito + isohybrid MBR); собирается по требованию, не поставляется |
+| `release/bzImage` | ≈3.7 MiB | ядро Linux 6.12.104 LTS (i686 pentium3) |
+| `release/rootfs.tar` | ≈253 MiB | корневое дерево (CDE + X11 + приложения) |
+| `release/rootfs.ext2` | 512 MiB | образ корневой ФС: его читает установщик в образе и QEMU smoke-тест; это **не** загрузочный диск |
 
-SHA256 — в `release/SHA256SUMS.txt`.
+Точные размеры и SHA256 — в `release/` и `release/SHA256SUMS.txt` (значения выше
+приблизительные, измеряйте `ls -l release/`).
 
 Сборка ISO: `scripts/make-live-iso.sh` (нужны `xorriso`, `cpio`, `gzip`;
 isolinux берётся с хоста или из lima VM `br2`).
@@ -125,8 +126,15 @@ limactl shell br2 -- bash -c 'cd ~/buildroot && \
 
 ### i686 `extlinux` (если нужно пересобрать overlay-бинарь)
 
-Buildroot собирает установщики syslinux под **хост** (aarch64), поэтому `extlinux`
-для target пересобирается вручную из дерева syslinux:
+Buildroot собирает установщики syslinux под **хост** (aarch64) — патч 0011
+(`extlinux-Use-the-host-toolchain-to-build.patch`) заставляет `extlinux` собираться
+`CC_FOR_BUILD`, и `~/br2-out/host/sbin/extlinux` это 64-битный aarch64 ELF. Поэтому
+`extlinux` для target пересобирается вручную из дерева syslinux **6.03** — той же
+версии, что собирает Buildroot (`boot/syslinux/syslinux.mk`: `SYSLINUX_VERSION = 6.03`;
+исходник `syslinux-6.03.tar.xz`, sha256
+`26d3986d2bea109d5dc0e4f8c4822a459276cf021125e8c9f23c3cca5d8c850e` — файл
+`boot/syslinux/syslinux.hash` в дереве Buildroot), прямо в buildroot-каталоге
+syslinux, в lima VM:
 
 ```sh
 limactl shell br2 -- bash -c '
@@ -137,16 +145,47 @@ rm -f bios/extlinux/*.o bios/extlinux/extlinux
 make ASCIIDOC_OK=-1 A2X_XML_OK=-1 \
   CC=i686-buildroot-linux-gnu-gcc LD=i686-buildroot-linux-gnu-ld \
   OBJCOPY=i686-buildroot-linux-gnu-objcopy AS=i686-buildroot-linux-gnu-as \
-  NASM=$H/bin/nasm CC_FOR_BUILD=i686-buildroot-linux-gnu-gcc \
+  CC_FOR_BUILD=i686-buildroot-linux-gnu-gcc \
+  NASM=$H/bin/nasm \
   CFLAGS_FOR_BUILD="-Os -D_FILE_OFFSET_BITS=64 -D_GNU_SOURCE" \
-  LDFLAGS_FOR_BUILD="" PYTHON=$H/bin/python3 bios || true
-file bios/extlinux/extlinux   # должен быть ELF 32-bit i386
+  LDFLAGS_FOR_BUILD="" PYTHON=$H/bin/python3 bios
+file bios/extlinux/extlinux   # должен быть ELF 32-bit i386 PIE, not stripped
 '
 # скопировать в board/thinkpad600x/rootfs-overlay/usr/sbin/extlinux
+# (перезаписывает target-файл /usr/sbin/extlinux)
+shasum -a 256 board/thinkpad600x/rootfs-overlay/usr/sbin/extlinux
 ```
 
-`mbr.bin` берётся из собранного syslinux и копируется в
-`board/thinkpad600x/rootfs-overlay/usr/share/syslinux/`.
+Требования к команде:
+
+- `CC`, `LD`, `AS`, `OBJCOPY` — переменные **target**-тулчейна из
+  `~/br2-out/host/bin` (префикс `i686-buildroot-linux-gnu-`). `CC_FOR_BUILD`
+  здесь тоже указывает на target-gcc, а не на хост: патч 0011 оставил
+  `extlinux/Makefile` линковку через `$(CC_FOR_BUILD)`, и именно эта переменная
+  решает разрядность бинаря (Buildroot по умолчанию передаёт туда `HOSTCC`).
+- Команда обязана **падать с ошибкой**: никаких `|| true` после `make` — иначе
+  неудачная сборка тихо оставит старый или отсутствующий бинарь.
+- Ожидаемый результат: ELF 32-bit i386 PIE, **не stripped** (`with debug_info`),
+  ≈289 KB; этот файл заменяет `/usr/sbin/extlinux` в target-образе.
+- Идентичность артефакта (чтобы ловить дрейф): sha256 committed-файла
+  `board/thinkpad600x/rootfs-overlay/usr/sbin/extlinux` =
+  `528be53a9329cc3e2891c6b1d4a53a99e1d56dcd8e1e9b02a9083e7f3e34741f`
+  (`shasum -a 256`, проверено 2026-09-26). Другой хэш = другая сборка:
+  разберитесь и обновите этот документ.
+
+`mbr.bin` в overlay класть **надо** — это единственный источник MBR-кода в
+образе. Buildroot ставит syslinux-образы (и C32-модули) в
+`$(BINARIES_DIR)/syslinux/`, то есть `~/br2-out/images/syslinux/`, и в host-дерево,
+но **не** в `$(TARGET_DIR)`; `board/thinkpad600x/post-build.sh` их тоже не
+копирует. Проверено экспериментом: файл удалён из `$(TARGET_DIR)`, пакет
+переустановлен — не вернулся. Поэтому в overlay лежит
+`board/thinkpad600x/rootfs-overlay/usr/share/syslinux/mbr.bin` (440 байт, sha256
+`4746f74bc9b9d3d579c41988a4a29bb7ac932ad1c70470ea779ea161eb799b64`, идентичен
+апстримному `bios/mbr/mbr.bin` из syslinux 6.03), и `scripts/check.sh` проверяет,
+что он на месте. `BR2_TARGET_SYSLINUX_MBR=y` в defconfig оставлен: он кладёт
+копию в `images/syslinux/` (Buildroot так не делает `mbr.bin` в target — это его
+собственный выход, но в target он не попадает). Без файла установщик прервётся с
+`mbr.bin not found - the installed disk would not boot`.
 
 ## Диагностика
 

@@ -1,18 +1,35 @@
 # Build output / release binaries (reproducible from source; tracked checksums in release/SHA256SUMS.txt)
+# The live ISO is built to /tmp, outside the tree; the /release/*.iso rule only
+# guards an overridden ISO_OUT.
 /release/*.ext2
-/release/*.ext4
 /release/*.tar
 /release/bzImage
 /release/*.iso
 /release/*.log
-/tmp/*.iso
 
+# In-tree Buildroot output (the documented build uses O=$HOME/br2-out)
+/output/
 
 # Compiled tool binaries
 /tools/neomagic_diag/neomagic_diag
+/tools/aquarium/aquarium
+
+# AppleDouble: macOS sidecars that a copyfile-based transfer materialises for
+# every xattr-carrying file.  They end up inside the image if they reach the
+# build tree, so they are ignored and scripts/check.sh asserts their absence in
+# release/rootfs.tar.
+._*
 
 # Editor/OS cruft
 .DS_Store
 *.swp
+*~
+*.bak
+*.orig
+*.rej
+\#*\#
+.vscode/
+.idea/
+
 # Non-free CS46xx DSP firmware (fetch with scripts/fetch-cs46xx-firmware.sh)
 /board/thinkpad600x/rootfs-overlay/lib/firmware/cs46xx/

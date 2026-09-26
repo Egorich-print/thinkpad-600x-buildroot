@@ -78,12 +78,12 @@ LDLINUX="/usr/lib/syslinux/modules/bios/ldlinux.c32"
 if [[ ! -f "$ISOLINUX_BIN" ]]; then
   if limactl shell br2 -- test -f /usr/lib/ISOLINUX/isolinux.bin 2>/dev/null; then
     echo "Copying isolinux from the br2 VM..."
-    limactl shell br2 -- cat /usr/lib/ISOLINUX/isolinux.bin    > /tmp/isolinux.bin
-    limactl shell br2 -- cat /usr/lib/ISOLINUX/isohdpfx.bin    > /tmp/isohdpfx.bin
-    limactl shell br2 -- cat /usr/lib/syslinux/modules/bios/ldlinux.c32 > /tmp/ldlinux.c32
-    ISOLINUX_BIN="/tmp/isolinux.bin"
-    ISOHDPFX="/tmp/isohdpfx.bin"
-    LDLINUX="/tmp/ldlinux.c32"
+    limactl shell br2 -- cat /usr/lib/ISOLINUX/isolinux.bin    > "$WORK/isolinux.bin"
+    limactl shell br2 -- cat /usr/lib/ISOLINUX/isohdpfx.bin    > "$WORK/isohdpfx.bin"
+    limactl shell br2 -- cat /usr/lib/syslinux/modules/bios/ldlinux.c32 > "$WORK/ldlinux.c32"
+    ISOLINUX_BIN="$WORK/isolinux.bin"
+    ISOHDPFX="$WORK/isohdpfx.bin"
+    LDLINUX="$WORK/ldlinux.c32"
   elif [[ -f "/Applications/VMware Fusion.app/Contents/Resources/isolinux.bin" ]]; then
     ISOLINUX_BIN="/Applications/VMware Fusion.app/Contents/Resources/isolinux.bin"
     echo "Using isolinux from VMware Fusion"
@@ -259,13 +259,13 @@ extlinux --install /mnt/target/boot || die "extlinux --install failed"
 [ -f /mnt/target/boot/ldlinux.c32 ] || die "ldlinux.c32 is missing from /boot"
 
 # Write the syslinux MBR code to sector 0 (first 440 bytes only, so the
-# partition table stays intact).
+# partition table stays intact).  Without it the disk does not boot at all.
+# /usr/share/syslinux/mbr.bin comes from Buildroot's syslinux target
+# (BR2_TARGET_SYSLINUX_MBR=y); the overlay does not carry a copy.
 MBR_OK=0
-for mbr in /usr/share/syslinux/mbr.bin /usr/lib/syslinux/mbr/mbr.bin; do
-  if [ -f "$mbr" ]; then
-    dd if="$mbr" of=/dev/sda bs=440 count=1 conv=notrunc 2>/dev/null && MBR_OK=1 && break
-  fi
-done
+if [ -f /usr/share/syslinux/mbr.bin ]; then
+    dd if=/usr/share/syslinux/mbr.bin of=/dev/sda bs=440 count=1 conv=notrunc 2>/dev/null && MBR_OK=1
+fi
 [ "$MBR_OK" = 1 ] || die "mbr.bin not found - the installed disk would not boot"
 
 sync

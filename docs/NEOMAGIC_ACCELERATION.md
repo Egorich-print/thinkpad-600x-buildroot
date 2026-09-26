@@ -48,8 +48,11 @@ Only needed for Option C (DRM) — the EXA path is userspace-only. Any kernel wo
 
 ## Phase 5 — benchmarks & validation
 
-- `tools/neomagic-bench`: microbenchmarks (fill 1000×1000, copy 800×600/100×100/640×480,
-  scroll) at 8/16 bpp, software vs hardware.
+- `tools/neomagic-bench` — **planned, not written yet; no such file exists**
+  (`ls tools/` shows only `aquarium` and `neomagic_diag`, and `neomagic-bench`
+  was never added by any commit). Deliverable of this phase: microbenchmarks
+  (fill 1000×1000, copy 800×600/100×100/640×480, scroll) at 8/16 bpp, software
+  vs hardware.
 - Realistic CDE workload (dtterm scroll, dtfile redraw, window move) — see
   `NEOMAGIC_BENCHMARKS.md`.
 - Only measured values make it into the final table.

@@ -40,9 +40,9 @@ MHz PIII and should be benchmarked (not enabled by default in this profile).
   will be faster for bootloader+kernel init, slower for mechanical disk read).
   In the current image tty1 auto-starts CDE; the login prompt is on ttyS0.
 - Rootfs size (uncompressed): target < 200 MB for full workstation profile.
-- Kernel image: < 5 MB (`release/bzImage` ≈3.9 MB in the current release).
+- Kernel image: < 5 MB (`release/bzImage` ≈3.7 MiB in the current release).
 - Rootfs tar archive: target < 60 MB for the minimal profile. The current full
-  release ships `release/rootfs.tar` ≈270 MiB (~283 MB) (see `release/` and
+  release ships `release/rootfs.tar` ≈253 MiB (see `release/` and
   `release/SHA256SUMS.txt`); the target was met only by the minimal profile.
 
 ## Memory tuning (kernel parameters applied)

@@ -81,10 +81,24 @@ prompt.
 - Copies the live tree, writes `extlinux.conf` + `syslinux.cfg`, copies the
   COM32 modules, runs `extlinux --install /mnt/target/boot`, then writes `mbr.bin` to
   sector 0 (first 440 bytes only).
-- `extlinux` (i686) + `mbr.bin` are shipped in the rootfs overlay
-  (`usr/sbin/extlinux`, `usr/share/syslinux/mbr.bin`) because Buildroot's
-  syslinux package builds its installers for the *host*. Regeneration is done by
-  `BR2_TARGET_SYSLINUX` + the cross-compile step documented in `docs/INSTALL.md`.
+- Two hand-shipped overlay files, both required by the installer:
+  - `board/thinkpad600x/rootfs-overlay/usr/sbin/extlinux` — Buildroot's syslinux
+    package builds its installers for the *host* (`~/br2-out/host/sbin/extlinux`
+    is aarch64), so the target binary is cross-compiled from the syslinux 6.03
+    tree; recipe, toolchain variables and the committed sha256 are in
+    `docs/INSTALL.md`.
+  - `board/thinkpad600x/rootfs-overlay/usr/share/syslinux/mbr.bin` — the 440-byte
+    MBR code the installer writes to sector 0. **Buildroot does not put it in the
+    target**: `SYSLINUX_INSTALL_IMAGES_CMDS` stages every syslinux image (and the
+    C32 modules) into `$(BINARIES_DIR)/syslinux/`, i.e. `~/br2-out/images/syslinux/`
+    (sha256 `4746f74bc9b9d3d579c41988a4a29bb7ac932ad1c70470ea779ea161eb799b64`,
+    identical to upstream `bios/mbr/mbr.bin`). Verified by deleting the copy from
+    `$(TARGET_DIR)` and reinstalling the package: it does not come back. So the
+    overlay copy is the *only* source of `/usr/share/syslinux/mbr.bin` in the
+    image, and the installer treats a missing file as fatal.
+- The installer reads the single in-image path `/usr/share/syslinux/mbr.bin` and
+  aborts with `mbr.bin not found` if it is absent, so
+  `scripts/check.sh` asserts the overlay file exists.
 - Unattended mode for testing: `live.install.auto=1` skips the `YES` prompt.
 
 ## X11 / NeoMagic
@@ -109,8 +123,10 @@ prompt.
 - VGA console (`tty1`): `/usr/sbin/autostart-cde` → `startx` →
   `/root/.xinitrc` → `dtwm` + CDE `Xsession`; a root shell takes over when
   CDE exits. The only login getty is on `ttyS0` (empty root password: Enter).
-- Audio: Crystal CS46xx (600X) — driver `CONFIG_SND_CS46XX=m` (auto-loaded from
-  `/etc/modules`) and DSP firmware under `/lib/firmware/cs46xx/`
+- Audio: Crystal CS46xx (600X) — driver `CONFIG_SND_CS46XX=m`, loaded by mdev's
+  coldplug (`S10mdev` runs `modprobe -abq` over every `/sys/**/modalias`; nothing
+  reads `/etc/modules`, which was removed as unread configuration) and DSP
+  firmware under `/lib/firmware/cs46xx/`
   (`ba1 cwc4630 …`), fetched at build time by
   `scripts/fetch-cs46xx-firmware.sh` (non-free, not committed). Output is
   **not verified on real hardware** — no such evidence is in the repository.
@@ -122,10 +138,67 @@ prompt.
 
 ## Release artifacts (`release/`)
 
-- `bzImage` ≈3.9 MB, `rootfs.ext2` = 512 MiB image, `rootfs.tar` ≈270 MiB
-  (~283 MB) (approximate; the release artifacts are being regenerated — measure
-  with `ls -l release/` and check `release/SHA256SUMS.txt`).
-- Live hybrid ISO: `/tmp/thinkpad600x-live.iso` (built on demand by
-  `scripts/make-live-iso.sh`; not shipped — size follows `rootfs.tar`, ≈270 MiB
-  plus bootloader overhead).
+- `bzImage` ≈3.7 MiB, `rootfs.tar` ≈253 MiB, `rootfs.ext2` = 512 MiB image
+  (approximate; the exact values for the current build are in `release/` and
+  `release/SHA256SUMS.txt` — measure with `ls -l release/`).
+- Live hybrid ISO ≈252 MiB: `/tmp/thinkpad600x-live.iso` (built on demand by
+  `scripts/make-live-iso.sh`; not shipped).
 - `SHA256SUMS.txt` present (binaries are git-ignored; checksums are tracked).
+
+## Cleanup pass 2026-09-26 (what was removed and why)
+
+Everything below was verified against the code before removal; `scripts/check.sh`
+now guards the invariants that matter.
+
+- **AppleDouble contamination in the shipped image (the important one).** 165
+  `._*` sidecars (163-byte macOS AppleDouble headers, one per xattr-carrying
+  file) had reached `release/rootfs.tar` and `release/rootfs.ext2`, and 74 of
+  them were passed into the live ISO. They were created on the *build host* side
+  when the project tree was copied into the lima VM, not by the project's own
+  scripts: macOS `tar -cf` materialises a sidecar per extended-attribute file
+  unless `COPYFILE_DISABLE=1` is set (that is now the documented way to copy the
+  tree in — see `docs/BUILD.md`), and Buildroot's overlay rsync is additive, so
+  they were re-archived on every rebuild. A note for anyone verifying this: macOS
+  `bsdtar` *hides* `._*` members when reading an archive, so `tar -tf` under-reports
+  them (74 instead of 165) — the count in `scripts/check.sh` comes from Python's
+  `tarfile`, which does not. Verified fixed: the rebuilt image and ISO contain 0.
+- **Unread configuration:** `/etc/modules` — nothing in the image reads it
+  (`S11modules` reads `/etc/modules-load.d/`, which does not exist; `S10mdev`
+  coldplugs by modalias). The two docs that claimed CS46xx was auto-loaded from it
+  were wrong.
+- **Two zero-byte CDE type files**, `appconfig/types/C/compat.dt` and `sunOW.dt`:
+  their upstream sources are empty and the CDE consumer scans by suffix, yielding
+  no records from an empty file.
+- **Dead kernel options** (no consumer in the image): `PARPORT`, `PARPORT_PC`,
+  `USB_ACM`, `USB_SERIAL`(+`PL2303`/`FTDI_SIO`/`GENERIC`), `USB_MON`, `PSTORE`,
+  `PSTORE_RAM`, `EXT4_FS_POSIX_ACL`, `TMPFS_POSIX_ACL`. **Caveat worth keeping:**
+  simply deleting a line from `linux.config` does *not* disable an option — the
+  Kconfig default applies, which is why `scripts/check.sh` treats "absent" and
+  "explicitly `# CONFIG_X is not set`" differently. `CONFIG_RFKILL_INPUT` is the
+  one dead option that stays: `net/rfkill/Kconfig` declares it `default y if
+  !EXPERT` with a hidden prompt, so it can only be turned off via `CONFIG_EXPERT`,
+  which is not worth enabling for one unused driver.
+- **Dead/no-op defconfig entries:** a duplicate `BR2_PACKAGE_USBUTILS=y`,
+  `BR2_PACKAGE_XSERVER_XORG_SERVER_XEPHYR=n` (a no-op `=n`), and three unused
+  tools that nothing referenced: `E2FSPROGS_RESIZE2FS`, and `dosfstools` with
+  `MKFS_FAT`/`FSCK_FAT`/`FATLABEL` (the installer creates ext4 only; FAT *mounting*
+  stays in the kernel).
+- **Host cruft:** `.DS_Store` and three `release/qemu-*.log` captures of a
+  superseded 6.18.7 image.
+- **`.gitignore`:** dropped two rules that can never match anything in this repo
+  (`/tmp/*.iso`, `/release/*.ext4`); added the real contaminant (`._*`), the
+  common editor-backup set, the sibling tool binary, `/output/` and IDE
+  directories.
+- **Deliberately NOT removed** (verified as required or useful): the overlay
+  `usr/share/syslinux/mbr.bin` — Buildroot stages syslinux images into
+  `$(BINARIES_DIR)/syslinux/`, *not* into `$(TARGET_DIR)` (proved by deleting the
+  target copy and reinstalling the package), so the overlay copy is the only
+  source of the installer's MBR code; the i686 `usr/sbin/extlinux` (Buildroot
+  builds syslinux installers for the host) and its new documented provenance;
+  `tools/neomagic_diag/Makefile` (the documented manual cross-build path for
+  hardware testing); the Ethernet drivers for PC Card adapters.
+- **Build-workflow facts learned here:** Buildroot merges a kernel-config change
+  into the *existing* build-directory `.config` ("Using … as base"), so editing
+  `linux.config` requires removing `O=/…/build/linux-*` to take effect; and
+  Buildroot never cleans `$(TARGET_DIR)`, so files from removed packages and
+  overlay deletions survive rebuilds until the target directory is cleaned.

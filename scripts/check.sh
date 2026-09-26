@@ -123,11 +123,29 @@ CONFIG_BLK_DEV_SR=y
 CONFIG_BLK_DEV_SD=y
 CONFIG_MPENTIUMIII=y
 EOF
-for dead in "CONFIG_CGROUPS=y" "CONFIG_NETFILTER=y" "CONFIG_TUN=m" "CONFIG_WIREGUARD=m" "CONFIG_BT=y"; do
-    grep -qx "$dead" board/thinkpad600x/linux.config && bad "dead option back: $dead" || ok "removed $dead"
+# A Kconfig option that is merely absent falls back to its Kconfig default, and
+# several of these default to y.  "Dead" therefore means either the setting is
+# gone or it is explicitly switched off - never CONFIG_X=y/m.
+for dead in CGROUPS NETFILTER TUN WIREGUARD BT PARPORT PARPORT_PC USB_MON \
+            USB_ACM USB_SERIAL USB_SERIAL_PL2303 USB_SERIAL_FTDI_SIO \
+            USB_SERIAL_GENERIC PSTORE PSTORE_RAM \
+            EXT4_FS_POSIX_ACL TMPFS_POSIX_ACL NFS_FS CONFIGFS_FS AUTOFS4_FS \
+            ZISOFS UDF_FS SENSORS_CORETEMP HW_RANDOM_INTEL; do
+    if grep -qE "^CONFIG_${dead}=" board/thinkpad600x/linux.config; then
+        bad "dead option enabled: CONFIG_$dead"
+    else
+        how="$(grep -c "^# CONFIG_${dead} is not set" board/thinkpad600x/linux.config)"
+        if [ "$how" -gt 0 ]; then
+            ok "switched off explicitly: CONFIG_$dead"
+        else
+            ok "not set (Kconfig default n): CONFIG_$dead"
+        fi
+    fi
 done
 
 echo "== defconfig invariants =="
+# BR2_TARGET_SYSLINUX_MBR matters because the in-image installer writes
+# /usr/share/syslinux/mbr.bin from the build; the overlay carries no copy.
 while read -r opt; do
     grep -qx "$opt" configs/thinkpad600x_defconfig && ok "$opt" || bad "$opt missing"
 done <<'EOF'
@@ -136,9 +154,39 @@ BR2_PACKAGE_XF86_INPUT_MOUSE=y
 BR2_PACKAGE_XF86_INPUT_KEYBOARD=y
 BR2_TARGET_ROOTFS_EXT2_MKFS_OPTIONS="-O ^metadata_csum,^orphan_file,^64bit"
 EOF
-grep -qx 'BR2_ROOTFS_LABEL="THINKPAD600X_LIV"' configs/thinkpad600x_defconfig \
-    && bad "BR2_ROOTFS_LABEL is a no-op for the ext2 generator" \
-    || ok "no no-op BR2_ROOTFS_LABEL"
+# Buildroot stages syslinux images into $(BINARIES_DIR)/syslinux/, never into
+# $(TARGET_DIR), so the MBR code has to be hand-shipped for the installer.
+[ -f board/thinkpad600x/rootfs-overlay/usr/share/syslinux/mbr.bin ] \
+    && ok "overlay ships mbr.bin for the installer" \
+    || bad "overlay mbr.bin is missing - the installer would die with 'mbr.bin not found'"
+[ -x board/thinkpad600x/rootfs-overlay/usr/sbin/extlinux ] \
+    && ok "overlay ships the i686 extlinux" \
+    || bad "overlay usr/sbin/extlinux is missing"
+for gone in "BR2_ROOTFS_LABEL" "BR2_PACKAGE_XSERVER_XORG_SERVER_XEPHYR=n" \
+            "BR2_PACKAGE_E2FSPROGS_RESIZE2FS=y" "BR2_PACKAGE_DOSFSTOOLS=y"; do
+    grep -q "^$gone" configs/thinkpad600x_defconfig \
+        && bad "no-op/unused option still set: $gone" || ok "not set: $gone"
+done
+
+echo "== release image is clean =="
+if [ ! -f release/rootfs.tar ]; then
+    echo "  skip (release/rootfs.tar not built yet)"
+else
+    # bsdtar hides AppleDouble members when reading, so count them from the
+    # raw listing rather than trusting a single tool.
+    n="$(python3 -c '
+import sys, tarfile
+t = tarfile.open("release/rootfs.tar")
+print(sum(1 for m in t.getmembers() if "/" in m.name and m.name.rsplit("/", 1)[1].startswith("._")))
+' 2>/dev/null)"
+    if [ -z "$n" ]; then
+        echo "  skip (python3 unavailable)"
+    elif [ "$n" -eq 0 ]; then
+        ok "no AppleDouble sidecars in release/rootfs.tar"
+    else
+        bad "release/rootfs.tar carries $n AppleDouble ._* files - rebuild the image from a clean tree"
+    fi
+fi
 
 echo "== initramfs can actually run =="
 TAR=release/rootfs.tar

@@ -1,7 +1,10 @@
 # NeoMagic — benchmarks (design + results placeholder)
 
 > Only measured values belong here. Until the physical 600X runs `neomagic_diag`
-> and `neomagic-bench`, the table below is intentionally empty.
+> (exists: `tools/neomagic_diag`) and `neomagic-bench` (**planned, not written
+> yet — no such file exists, `tools/` holds only `aquarium` and
+> `neomagic_diag`**), the table below is intentionally empty. The numbers stay
+> empty until the tool exists and has been run on real hardware.
 
 ## What to measure and why
 

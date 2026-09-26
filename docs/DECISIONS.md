@@ -203,9 +203,16 @@ Every major architectural decision for the ThinkPad 600X Buildroot image, with r
   remains available.
 - **PID 1 behavior:** failures exec a shell on the live system rather than
   panicking; success reboots instead of exiting.  Root has an empty password.
-- **Bootloader payload:** the i686 `extlinux` and `mbr.bin` ship in the rootfs
-  overlay because Buildroot's syslinux package builds its installers for the host;
-  the target `extlinux` is cross-compiled from the syslinux tree.
+- **Bootloader payload:** two hand-shipped overlay files, both required.
+  `usr/sbin/extlinux` (i686) is hand-shipped because Buildroot's syslinux package
+  builds its installers for the *host* (`~/br2-out/host/sbin/extlinux` is
+  aarch64, by Buildroot's own patch 0011); the target `extlinux` is
+  cross-compiled from the syslinux 6.03 tree (`docs/INSTALL.md`).
+  `usr/share/syslinux/mbr.bin` is hand-shipped because Buildroot stages syslinux
+  images into `$(BINARIES_DIR)/syslinux/`, **not** into `$(TARGET_DIR)` — verified
+  by deleting the target copy and reinstalling the package, after which it does
+  not return. Without it the image has no MBR code and the installer aborts with
+  `mbr.bin not found`.
 - **CDE source URL fixed:** `…/project/cdesktopenv/src` (the version-less path
   returned HTTP 404).
 - **Xorg auto-detects the GPU:** `xorg.conf` pre-loads the legacy helper modules

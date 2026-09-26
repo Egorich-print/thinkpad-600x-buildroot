@@ -12,9 +12,45 @@
 | Опт. | `-O2` (`BR2_OPTIMIZE_2`) | баланс размер/скорость |
 | Ядро | `CONFIG_CC_OPTIMIZE_FOR_SIZE` | ядро `-Os` — меньше резидентного ядра (критично для 64 MB) |
 | Ядро | `CONFIG_MPENTIUMIII`, `SMP off` | точный CPU, без лишних спинов блокировок |
-| Ядро | `CONFIG_PREEMPT_DYNAMIC` | runtime `voluntary` — throughput + отзывчивость |
+| Ядро | `PREEMPT` не задан → kernel-default `CONFIG_PREEMPT_NONE=y` | без принудительного вытеснения (throughput-профиль) |
 | Ядро | `CONFIG_EXT4_USE_FOR_EXT2` | один FS-драйвер на ext2/3/4 |
 | Сборка | `BR2_CCACHE=y` | ускорение итераций |
+
+## Preemption: что на самом деле
+
+В `board/thinkpad600x/linux.config` опции `PREEMPT` нет вообще
+(`grep -c PREEMPT board/thinkpad600x/linux.config` → `0`), то есть выбор модели
+вытеснения не настраивается проектом и остаётся на значении по умолчанию ядра.
+Проверено в сгенерированном конфиге сборки
+(`~/br2-out/build/linux-6.12.104/include/config/auto.conf`, linux 6.12.104):
+
+- `CONFIG_PREEMPT_NONE=y` — «No Forced Preemption (Server)». Это значение
+  выбора `choice "Preemption Model"`: в `kernel/Kconfig.preempt` у choice стоит
+  `default PREEMPT_NONE`.
+- `CONFIG_PREEMPT_DYNAMIC=y` — включается тоже по умолчанию, потому что сам
+  символ объявлен как `default y if HAVE_PREEMPT_DYNAMIC_CALL`, а на arm64 это
+  условие выполняется. Это не альтернатива `PREEMPT_NONE`, а возможность
+  сменить модель на лету: `preempt=` в cmdline. В дереве нет ни одной строки
+  с `preempt=` (`grep -rn 'preempt=' .` пусто), так что переключать нечего.
+
+Итоговая модель выбирается в `preempt_dynamic_init()`
+(`kernel/sched/core.c`): при `IS_ENABLED(CONFIG_PREEMPT_NONE)` вызывается
+`sched_dynamic_update(preempt_dynamic_none)`, то есть ядро стартует как
+`Dynamic Preempt: none`.
+
+Почему прежняя формулировка выглядела правдоподобной: строка `PREEMPT_DYNAMIC`
+дейтельно попадает в бинарь (`strings release/bzImage | grep -o 'PREEMPT_[A-Z]*'`
+→ `PREEMPT_DYNAMIC`) — это имя режима, поддерживаемого конфигурацией, а не
+признак того, что вытеснение динамическое. Раннее утверждение «runtime
+`voluntary`» не подтверждается ничем: `voluntary` не выбран ни в одном
+конфиге.
+
+> Не проверено: строка `Dynamic Preempt: none` — это сообщение раннего лога
+> ядра во время загрузки (`pr_info` в `kernel/sched/core.c`), не строка build
+> лога. Ни в одном логе сборки в VM (`build.log`, `build3.log`…`build6.log`)
+> её нет: единственное вхождение `preempt` — это баннер самого хоста-VM
+> (`Linux lima-br2 6.8.0-139-generic … PREEMPT_DYNAMIC`), то есть ядра Ubuntu,
+> а не целевого ядра. Вывод выше сделан по исходникам ядра и `auto.conf`.
 
 ## Ключевой факт про SSE2
 

@@ -45,10 +45,16 @@ The live ISO entries and generated installed `extlinux.conf` use
 the prompt and input are on VGA while serial remains available.  Root has an
 empty password.
 
-`extlinux` (i686) and `mbr.bin` ship in the rootfs overlay, because Buildroot's
-syslinux package builds its installers for the *host*; the i686 `extlinux` is
-cross-compiled from the syslinux tree with `CC_FOR_BUILD` set to the target
-toolchain.
+Two overlay files are hand-shipped for the bootloader.  `extlinux` (i686) ships
+because Buildroot's syslinux package builds its installers for the *host*; it is
+cross-compiled from the syslinux 6.03 tree with the target toolchain from
+`~/br2-out/host/bin` (`docs/INSTALL.md` carries the exact recipe).
+`usr/share/syslinux/mbr.bin` ships because Buildroot stages syslinux images into
+`$(BINARIES_DIR)/syslinux/`, not into `$(TARGET_DIR)` — removing the target copy
+and reinstalling the package does not bring it back — so the overlay copy is the
+only source of the MBR code in the image.  The installer reads the single
+in-image path `/usr/share/syslinux/mbr.bin` and treats a missing file as fatal,
+so `scripts/check.sh` asserts the overlay copy exists.
 
 ## Consequences
 

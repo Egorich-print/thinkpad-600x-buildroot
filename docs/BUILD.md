@@ -30,6 +30,36 @@ Live-ISO tools (used by `scripts/make-live-iso.sh`; `isolinux` supplies
 sudo apt-get install -y cpio gzip xorriso isolinux
 ```
 
+## Build VM (lima `br2`)
+
+`scripts/lima.buildroot.yaml` defines the build VM: vz/aarch64, 10 CPUs, 16 GiB
+RAM, 121 GiB disk, Ubuntu 24.04 cloud image. The template matches the live `br2`
+instance.
+
+The host home is **deliberately not mounted** in the VM, so the project tree is
+not visible from inside and has to be copied in:
+
+```sh
+# host: pack the tree (run from the parent directory of the project)
+COPYFILE_DISABLE=1 tar --exclude='._*' -czf /tmp/src.tar.gz \
+    --exclude=release --exclude=.git -C <parent> thinkpad-600x-buildroot
+limactl copy /tmp/src.tar.gz br2:~/src.tar.gz
+limactl shell br2 -- tar -xzf ~/src.tar.gz -C ~
+```
+
+Then build inside the instance:
+
+```sh
+limactl shell br2 -- bash -c 'make O=$HOME/br2-out \
+    BR2_EXTERNAL=$HOME/thinkpad-600x-buildroot thinkpad600x_defconfig && \
+    make O=$HOME/br2-out BR2_EXTERNAL=$HOME/thinkpad-600x-buildroot -j10'
+```
+
+> AppleDouble `._*` sidecars must never reach the build tree: they end up inside
+> the shipped image, and `scripts/check.sh` fails if `release/rootfs.tar`
+> contains any. `COPYFILE_DISABLE=1` is what stops macOS `tar` from creating
+> them in the first place.
+
 ## Build
 
 ```sh
@@ -40,6 +70,8 @@ sudo apt-get install -y cpio gzip xorriso isolinux
 git clone --depth 1 --branch 2026.05.2 https://github.com/buildroot/buildroot.git
 
 # 3. build (out-of-tree)
+#    in the lima `br2` VM the tree is not on a mounted host filesystem —
+#    copy it in first, see "Build VM (lima br2)" above
 make O=$HOME/br2-out \
      BR2_EXTERNAL=/abs/path/to/thinkpad-600x-buildroot \
      thinkpad600x_defconfig
